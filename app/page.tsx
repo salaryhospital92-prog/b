@@ -1,10 +1,12 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 
 type Role = "doctor" | "chief" | "accounts" | "admin";
-type View = "overview" | "days" | "audit" | "payments" | "reports" | "settings";
+type View = "overview" | "days" | "audit" | "payments" | "reports" | "settings" | "registry";
 type Toast = { message: string; kind: "success" | "info" } | null;
+type PatientRecord = { id: number; fullName: string; fileNumber: string; department: string; admissionDate: string; paymentCategory: string };
+type EmployeeRecord = { id: number; fullName: string; employeeNumber: string; role: string; specialty: string; status: string };
 
 const IQD = new Intl.NumberFormat("ar-IQ");
 const money = (value: number) => `${IQD.format(value)} د.ع`;
@@ -75,6 +77,12 @@ export default function Home() {
   const [inpatients, setInpatients] = useState(3);
   const [auditFilter, setAuditFilter] = useState("الكل");
   const [search, setSearch] = useState("");
+  const [registryTab, setRegistryTab] = useState<"patient" | "employee">("patient");
+  const [registrySaving, setRegistrySaving] = useState(false);
+  const [registryLoading, setRegistryLoading] = useState(false);
+  const [registeredPatients, setRegisteredPatients] = useState<PatientRecord[]>([]);
+  const [registeredEmployees, setRegisteredEmployees] = useState<EmployeeRecord[]>([]);
+  const [employeeRole, setEmployeeRole] = useState("طبيب مقيم");
 
   const currentRole = roles.find((item) => item.id === role)!;
   const consultationPaid = Math.min(consultations, 10) * 10000;
@@ -96,16 +104,38 @@ export default function Home() {
     ];
     if (role === "accounts") return [
       { id: "overview" as View, label: "الرئيسية", icon: "⌂" },
+      { id: "registry" as View, label: "تسجيل مريض", icon: "＋" },
       { id: "payments" as View, label: "حالات الدفع", icon: "◫" },
       { id: "reports" as View, label: "المطابقات", icon: "≋" },
     ];
     return [
       { id: "overview" as View, label: "لوحة القيادة", icon: "⌂" },
+      { id: "registry" as View, label: "مركز التسجيل", icon: "＋" },
       { id: "reports" as View, label: "التقارير الشاملة", icon: "≋" },
       { id: "payments" as View, label: "البحث عن مريض", icon: "⌕" },
       { id: "settings" as View, label: "إدارة النظام", icon: "⌁" },
     ];
   }, [role]);
+
+  useEffect(() => {
+    if (view !== "registry") return;
+    let active = true;
+    setRegistryLoading(true);
+    fetch("/api/registry")
+      .then(async (response) => {
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "تعذر تحميل سجلات التسجيل");
+        if (active) {
+          setRegisteredPatients(data.patients ?? []);
+          setRegisteredEmployees(data.employees ?? []);
+        }
+      })
+      .catch(() => {
+        if (active) notify("سيتم عرض السجلات فور اكتمال تهيئة قاعدة البيانات", "info");
+      })
+      .finally(() => active && setRegistryLoading(false));
+    return () => { active = false; };
+  }, [view]);
 
   function changeRole(nextRole: Role) {
     setRole(nextRole);
@@ -135,6 +165,35 @@ export default function Home() {
     event.preventDefault();
     setAddOpen(false);
     notify("حُفظ يوم العمل وأُرسل إلى رئيس الأطباء للتدقيق");
+  }
+
+  async function submitRegistry(event: FormEvent<HTMLFormElement>, kind: "patient" | "employee") {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const payload = Object.fromEntries(new FormData(form).entries());
+    setRegistrySaving(true);
+    try {
+      const response = await fetch("/api/registry", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind, ...payload }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "تعذر حفظ السجل");
+      if (kind === "patient") {
+        setRegisteredPatients((rows) => [data.record, ...rows]);
+        notify(`تم إنشاء ملف المريض ${data.record.fullName} بنجاح`);
+      } else {
+        setRegisteredEmployees((rows) => [data.record, ...rows]);
+        notify(`تم تسجيل الموظف ${data.record.fullName} وتحديد صلاحياته`);
+      }
+      form.reset();
+      setEmployeeRole("طبيب مقيم");
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "تعذر حفظ السجل", "info");
+    } finally {
+      setRegistrySaving(false);
+    }
   }
 
   function renderDoctorDashboard() {
@@ -331,6 +390,93 @@ export default function Home() {
     );
   }
 
+  function renderRegistry() {
+    const activeTab = role === "accounts" ? "patient" : registryTab;
+    const latest = activeTab === "patient" ? registeredPatients : registeredEmployees;
+    const isDoctorRole = employeeRole === "طبيب مقيم" || employeeRole === "رئيس الأطباء";
+    return (
+      <>
+        <section className="page-title registry-title">
+          <div>
+            <p className="eyebrow">قاعدة البيانات المركزية</p>
+            <h1>مركز التسجيل</h1>
+            <p>أنشئ ملفات المرضى وحسابات الموظفين مع تدقيق البيانات قبل الحفظ.</p>
+          </div>
+          <div className="registry-health"><span>✓</span><p><b>الحفظ الآمن مفعّل</b><small>تُحفظ السجلات مباشرة في قاعدة النظام</small></p></div>
+        </section>
+
+        <section className="registry-stats">
+          <article><span className="registry-stat-icon patient">♙</span><div><small>المرضى المسجلون حديثًا</small><strong>{registeredPatients.length}</strong><em>آخر 12 سجلًا</em></div></article>
+          <article><span className="registry-stat-icon employee">✦</span><div><small>الموظفون النشطون</small><strong>{registeredEmployees.filter((item) => item.status === "نشط").length}</strong><em>حسب الدور والاختصاص</em></div></article>
+          <article><span className="registry-stat-icon quality">✓</span><div><small>اكتمال بيانات اليوم</small><strong>100%</strong><em>لا توجد سجلات ناقصة</em></div></article>
+        </section>
+
+        <section className="registry-layout">
+          <aside className="registry-menu">
+            <p>نوع التسجيل</p>
+            <button className={activeTab === "patient" ? "active" : ""} onClick={() => setRegistryTab("patient")}>
+              <span>♙</span><div><b>تسجيل مريض</b><small>الملف الطبي وبيانات الدخول</small></div><i>←</i>
+            </button>
+            {role === "admin" && <button className={activeTab === "employee" ? "active" : ""} onClick={() => setRegistryTab("employee")}>
+              <span>✦</span><div><b>تسجيل موظف</b><small>الدور والاختصاص والصلاحيات</small></div><i>←</i>
+            </button>}
+            <div className="registry-tip"><span className="ai-orb">✦</span><p><b>مساعد التسجيل</b><small>{activeTab === "patient" ? "يتحقق من رقم الملف والحقول الأساسية قبل إنشاء سجل المريض." : "يضبط سقوف الأطباء تلقائيًا حسب الدور المختار."}</small></p></div>
+          </aside>
+
+          <div className="registry-main">
+            {activeTab === "patient" ? (
+              <form className="registry-form" onSubmit={(event) => submitRegistry(event, "patient")}>
+                <div className="registry-form-head"><div><span>♙</span><p><b>بيانات المريض</b><small>الحقول المعلّمة مطلوبة لإنشاء الملف</small></p></div><StatusPill tone="approved">نموذج جديد</StatusPill></div>
+                <div className="form-section-title"><span>1</span><div><b>المعلومات الأساسية</b><small>الهوية ووسائل التواصل</small></div></div>
+                <div className="registry-fields">
+                  <label className="form-field wide"><span>الاسم الثلاثي للمريض <b>*</b></span><input name="fullName" required placeholder="مثال: زينب علي حسن" /></label>
+                  <label className="form-field"><span>رقم الملف <b>*</b></span><input name="fileNumber" required defaultValue={`P-${1050 + registeredPatients.length}`} dir="ltr" /></label>
+                  <label className="form-field"><span>تاريخ الميلاد</span><input name="birthDate" type="date" /></label>
+                  <label className="form-field"><span>الجنس <b>*</b></span><select name="gender" required defaultValue=""><option value="" disabled>اختر الجنس</option><option>أنثى</option><option>ذكر</option></select></label>
+                  <label className="form-field"><span>رقم الهاتف</span><input name="phone" type="tel" placeholder="07XX XXX XXXX" dir="ltr" /></label>
+                </div>
+                <div className="form-section-title"><span>2</span><div><b>بيانات الدخول</b><small>القسم والطبيب وتصنيف الدفع</small></div></div>
+                <div className="registry-fields">
+                  <label className="form-field"><span>تاريخ الدخول <b>*</b></span><input name="admissionDate" type="date" required defaultValue="2026-08-11" /></label>
+                  <label className="form-field"><span>القسم الطبي <b>*</b></span><select name="department" required defaultValue=""><option value="" disabled>اختر القسم</option><option>النسائية والتوليد</option><option>الجراحة العامة</option><option>الطب الباطني</option><option>طب الأطفال</option><option>الطوارئ</option><option>العناية المركزة</option></select></label>
+                  <label className="form-field"><span>الطبيب المسؤول</span><select name="attendingDoctor" defaultValue=""><option value="">يُحدد لاحقًا</option><option>د. ليلى قاسم</option><option>د. أحمد البياتي</option><option>د. سارة محمود</option><option>د. مريم حسن</option></select></label>
+                  <label className="form-field"><span>تصنيف الدفع <b>*</b></span><select name="paymentCategory" required defaultValue="نقدي"><option>نقدي</option><option>مجاني</option><option>تأمين</option><option>آجل</option></select></label>
+                  <label className="form-field full"><span>ملاحظات أولية</span><textarea name="notes" rows={3} placeholder="الحالة عند الدخول أو أي معلومات مهمة للكادر..." /></label>
+                </div>
+                <div className="registry-submit"><p><span>✓</span><small>سيظهر المريض مباشرة في البحث وحالات الدفع بعد التسجيل.</small></p><button className="primary-action" disabled={registrySaving}>{registrySaving ? "جارٍ الحفظ..." : "حفظ ملف المريض"}<span>←</span></button></div>
+              </form>
+            ) : (
+              <form className="registry-form" onSubmit={(event) => submitRegistry(event, "employee")}>
+                <div className="registry-form-head"><div><span>✦</span><p><b>بيانات الموظف</b><small>أنشئ الحساب وحدد الدور والاختصاص</small></p></div><StatusPill tone="approved">حساب جديد</StatusPill></div>
+                <div className="form-section-title"><span>1</span><div><b>المعلومات الوظيفية</b><small>الهوية وبيانات الحساب</small></div></div>
+                <div className="registry-fields">
+                  <label className="form-field wide"><span>الاسم الكامل <b>*</b></span><input name="fullName" required placeholder="مثال: د. علي كريم حسن" /></label>
+                  <label className="form-field"><span>الرقم الوظيفي <b>*</b></span><input name="employeeNumber" required defaultValue={`E-${2026 + registeredEmployees.length}`} dir="ltr" /></label>
+                  <label className="form-field"><span>اسم المستخدم <b>*</b></span><input name="username" required placeholder="ali.kareem" dir="ltr" /></label>
+                  <label className="form-field"><span>رقم الهاتف</span><input name="phone" type="tel" placeholder="07XX XXX XXXX" dir="ltr" /></label>
+                  <label className="form-field"><span>تاريخ المباشرة <b>*</b></span><input name="joinDate" type="date" required defaultValue="2026-08-11" /></label>
+                </div>
+                <div className="form-section-title"><span>2</span><div><b>الدور والاختصاص</b><small>تُبنى الصلاحيات بناءً على الدور</small></div></div>
+                <div className="registry-fields">
+                  <label className="form-field"><span>الدور الوظيفي <b>*</b></span><select name="role" required value={employeeRole} onChange={(event) => setEmployeeRole(event.target.value)}><option>طبيب مقيم</option><option>رئيس الأطباء</option><option>موظف حسابات</option><option>الإدارة العليا</option></select></label>
+                  <label className="form-field"><span>الاختصاص <b>*</b></span><select name="specialty" required defaultValue=""><option value="" disabled>اختر الاختصاص</option><option>النسائية والتوليد</option><option>الجراحة العامة</option><option>الطب الباطني</option><option>طب الأطفال</option><option>التخدير والعناية</option><option>الأشعة</option><option>المختبر</option><option>الحسابات</option><option>الإدارة</option></select></label>
+                  <label className="form-field"><span>حالة الحساب</span><select name="status" defaultValue="نشط"><option>نشط</option><option>موقوف مؤقتًا</option><option>إجازة</option></select></label>
+                </div>
+                {isDoctorRole && <div className="doctor-rules"><div className="smart-strip"><span className="ai-orb">✦</span><p><b>قواعد الطبيب المالية</b><small>تُستخدم تلقائيًا عند احتساب يوم العمل.</small></p></div><label className="form-field"><span>أقصى استشاريات يوميًا</span><input name="maxConsultations" type="number" min="0" defaultValue="10" /></label><label className="form-field"><span>السقف اليومي (د.ع)</span><input name="dailyCap" type="number" min="0" step="10000" defaultValue="200000" /></label></div>}
+                <div className="registry-submit"><p><span>✓</span><small>سيحصل الموظف على صلاحيات {employeeRole} بعد تفعيل الحساب.</small></p><button className="primary-action" disabled={registrySaving}>{registrySaving ? "جارٍ الحفظ..." : "تسجيل الموظف"}<span>←</span></button></div>
+              </form>
+            )}
+          </div>
+        </section>
+
+        <section className="panel registry-recent">
+          <div className="panel-head"><div><h2>آخر السجلات</h2><p>{activeTab === "patient" ? "المرضى الذين أضيفوا مؤخرًا" : "الموظفون الذين أضيفوا مؤخرًا"}</p></div><span className="records-count">{latest.length} سجل</span></div>
+          {registryLoading ? <div className="registry-empty"><span className="loading-ring" /><p>جارٍ تحميل السجلات...</p></div> : latest.length === 0 ? <div className="registry-empty"><span>＋</span><p><b>لا توجد سجلات بعد</b><small>استخدم النموذج أعلاه لإضافة أول سجل.</small></p></div> : <div className="recent-records">{activeTab === "patient" ? registeredPatients.map((item) => <div key={item.id}><span className="record-avatar">{item.fullName[0]}</span><p><b>{item.fullName}</b><small>{item.fileNumber} · {item.department}</small></p><StatusPill tone="approved">{item.paymentCategory}</StatusPill><time>{item.admissionDate}</time></div>) : registeredEmployees.map((item) => <div key={item.id}><span className="record-avatar employee">{item.fullName[0]}</span><p><b>{item.fullName}</b><small>{item.employeeNumber} · {item.role} · {item.specialty}</small></p><StatusPill tone="approved">{item.status}</StatusPill><time>حساب فعّال</time></div>)}</div>}
+        </section>
+      </>
+    );
+  }
+
   function renderSettings() {
     const doctors = [
       ["د. أحمد البياتي", "10", "200,000"], ["د. سارة محمود", "12", "250,000"], ["د. مريم حسن", "10", "200,000"], ["د. يوسف كريم", "8", "180,000"],
@@ -349,6 +495,7 @@ export default function Home() {
   function renderContent() {
     if (view === "audit") return renderAudit();
     if (view === "payments") return renderPayments();
+    if (view === "registry") return renderRegistry();
     if (view === "settings") return renderSettings();
     if (view === "reports") return renderReports();
     if (view === "days") return renderDays();
