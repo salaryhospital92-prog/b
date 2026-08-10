@@ -29,14 +29,18 @@ test("server-renders the Arabic hospital dashboard", async () => {
 });
 
 test("keeps Supabase credentials server-side and covers responsive screens", async () => {
-  const [api, handoverApi, page, serverClient, css, migration, handoverMigration, exampleEnv] = await Promise.all([
+  const [api, handoverApi, reportApi, accessApi, browserClient, page, serverClient, css, migration, handoverMigration, reportingMigration, exampleEnv] = await Promise.all([
     readFile(new URL("../app/api/registry/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/handover/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/reports/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/access-requests/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../lib/supabase-browser.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../lib/supabase-server.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
     readFile(new URL("../supabase/migrations/202608110001_initial_hospital_schema.sql", import.meta.url), "utf8"),
     readFile(new URL("../supabase/migrations/202608110002_shift_handovers.sql", import.meta.url), "utf8"),
+    readFile(new URL("../supabase/migrations/202608110003_reporting_and_access.sql", import.meta.url), "utf8"),
     readFile(new URL("../.env.example", import.meta.url), "utf8"),
   ]);
 
@@ -44,6 +48,11 @@ test("keeps Supabase credentials server-side and covers responsive screens", asy
   assert.match(api, /register_patient/);
   assert.match(handoverApi, /create_shift_handover/);
   assert.match(handoverApi, /accept_shift_handover/);
+  assert.match(reportApi, /financial_transactions/);
+  assert.match(reportApi, /topDoctors/);
+  assert.match(accessApi, /auth\.getUser\(token\)/);
+  assert.match(accessApi, /بانتظار الموافقة/);
+  assert.doesNotMatch(browserClient, /SUPABASE_SERVICE_ROLE_KEY/);
   assert.match(serverClient, /SUPABASE_SERVICE_ROLE_KEY/);
   assert.doesNotMatch(api, /NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY/);
   assert.doesNotMatch(exampleEnv, /eyJ|sb_secret_|service_role\.[A-Za-z0-9]/);
@@ -55,6 +64,10 @@ test("keeps Supabase credentials server-side and covers responsive screens", asy
   assert.match(css, /handover-layout/);
   assert.match(page, /Intl\.NumberFormat\("en-US"\)/);
   assert.match(page, /استلام المناوبة/);
+  assert.match(page, /التقارير اليومية والأسبوعية والشهرية/);
+  assert.match(page, /المتابعة عبر Google/);
+  assert.match(css, /data-theme="dark"/);
+  assert.match(css, /report-kpis/);
 
   for (const table of ["employees", "patients", "patient_events", "procedures", "doctor_calls", "call_details", "inpatient_payments", "doctor_caps", "audit_logs"]) {
     assert.match(migration, new RegExp(`create table if not exists public\\.${table}`));
@@ -63,6 +76,8 @@ test("keeps Supabase credentials server-side and covers responsive screens", asy
   assert.match(handoverMigration, /create table if not exists public\.doctor_shift_handovers/);
   assert.match(handoverMigration, /create table if not exists public\.handover_patients/);
   assert.match(handoverMigration, /attending_doctor = handover_record\.to_doctor_name/);
+  assert.match(reportingMigration, /create table if not exists public\.financial_transactions/);
+  assert.match(reportingMigration, /create table if not exists public\.system_access_requests/);
 });
 
 test("ships installable PWA icon metadata", async () => {

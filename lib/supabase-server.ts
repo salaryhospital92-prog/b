@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
 import { createClient } from "@supabase/supabase-js";
 
-function readRuntimeVariable(name: "SUPABASE_URL" | "SUPABASE_SERVICE_ROLE_KEY") {
+export function readRuntimeVariable(name: string) {
   const workerEnv = env as unknown as Record<string, string | undefined>;
   return workerEnv[name] || process.env[name];
 }

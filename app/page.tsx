@@ -2,14 +2,24 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { buildNewbornNames, calculateDailyCompensation, getInitialPrice } from "../lib/rules-engine";
+import { getSupabaseBrowser } from "../lib/supabase-browser";
 
 type Role = "doctor" | "chief" | "accounts" | "admin";
-type View = "overview" | "handover" | "days" | "audit" | "payments" | "reports" | "settings" | "registry" | "personalSalary";
+type View = "overview" | "handover" | "days" | "audit" | "payments" | "reports" | "settings" | "registry" | "personalSalary" | "capabilities" | "accessRequests";
 type Toast = { message: string; kind: "success" | "info" } | null;
 type PatientRecord = { id: number; fullName: string; fileNumber: string; department: string; admissionDate: string; paymentCategory: string; entryType: string; patientStatus: string; billingMode: string; attendingDoctor?: string | null; isNewborn?: boolean; newbornCount?: number };
 type EmployeeRecord = { id: number; fullName: string; employeeNumber: string; role: string; specialty: string; status: string };
 type HandoverPatient = { id: number; priority: string; clinicalSummary: string; pendingActions: string; receivedStatus: string; patient: PatientRecord };
 type HandoverRecord = { id: number; fromDoctorName: string; toDoctorName: string; status: string; notes?: string | null; shiftEndedAt: string; acceptedAt?: string | null; patients: HandoverPatient[] };
+type ReportData = {
+  range: { start: string; end: string };
+  summary: { patients: number; newborns: number; birthCases: number; expenses: number; salaries: number; revenue: number; net: number; acceptedHandovers: number; receivedPatients: number; paidInpatientDays: number; pendingPayments: number; freeInpatientDays: number; activePatients: number };
+  topDoctors: { name: string; patientsReceived: number }[];
+  dailySeries: { date: string; patients: number; births: number; revenue: number; expenses: number; salaries: number }[];
+  generatedAt: string;
+};
+type AccessRequestRecord = { id: number; fullName: string; email: string; provider: "email" | "google" | "apple"; requestedRole: string; specialty: string; status: string; requestedAt: string };
+type AccessDraft = { fullName: string; requestedRole: string; specialty: string };
 
 const IQD = new Intl.NumberFormat("en-US");
 const money = (value: number) => `${IQD.format(value)} د.ع`;
@@ -91,6 +101,14 @@ export default function Home() {
   const [selectedPatientIds, setSelectedPatientIds] = useState<number[]>([]);
   const [handoverFromDoctor, setHandoverFromDoctor] = useState("د. سارة محمود");
   const [handoverToDoctor, setHandoverToDoctor] = useState("د. أحمد البياتي");
+  const [reportPeriod, setReportPeriod] = useState<"daily" | "weekly" | "monthly">("daily");
+  const [reportDate, setReportDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [reportLoading, setReportLoading] = useState(true);
+  const [reportData, setReportData] = useState<ReportData | null>(null);
+  const [accessOpen, setAccessOpen] = useState(false);
+  const [accessSaving, setAccessSaving] = useState(false);
+  const [accessRequests, setAccessRequests] = useState<AccessRequestRecord[]>([]);
+  const [accessLoading, setAccessLoading] = useState(true);
 
   const currentRole = roles.find((item) => item.id === role)!;
   const dailyCalculation = calculateDailyCompensation({ consultations, births, cesareans, paidInpatients: inpatients, maxConsultations: 10, combinedCap: 200000 });
@@ -104,6 +122,7 @@ export default function Home() {
       { id: "handover" as View, label: "استلام المناوبة", icon: "⇄" },
       { id: "days" as View, label: "أيام العمل", icon: "▣" },
       { id: "reports" as View, label: "كشف الحساب", icon: "≋" },
+      { id: "capabilities" as View, label: "دليل مهامي", icon: "◎" },
     ];
     if (role === "chief") return [
       { id: "overview" as View, label: "الرئيسية", icon: "⌂" },
@@ -112,19 +131,23 @@ export default function Home() {
       { id: "audit" as View, label: "التدقيق والاعتماد", icon: "✓" },
       { id: "settings" as View, label: "سقوف الأطباء", icon: "⌁" },
       { id: "reports" as View, label: "التقارير", icon: "≋" },
+      { id: "capabilities" as View, label: "دليل الصلاحيات", icon: "◎" },
     ];
     if (role === "accounts") return [
       { id: "overview" as View, label: "الرئيسية", icon: "⌂" },
       { id: "registry" as View, label: "تسجيل مريض", icon: "＋" },
       { id: "payments" as View, label: "حالات الدفع", icon: "◫" },
       { id: "reports" as View, label: "المطابقات", icon: "≋" },
+      { id: "capabilities" as View, label: "دليل المهام", icon: "◎" },
     ];
     return [
       { id: "overview" as View, label: "لوحة القيادة", icon: "⌂" },
       { id: "registry" as View, label: "مركز التسجيل", icon: "＋" },
       { id: "reports" as View, label: "التقارير الشاملة", icon: "≋" },
+      { id: "accessRequests" as View, label: "طلبات الحسابات", icon: "♙" },
       { id: "payments" as View, label: "البحث عن مريض", icon: "⌕" },
       { id: "settings" as View, label: "إدارة النظام", icon: "⌁" },
+      { id: "capabilities" as View, label: "دليل الصلاحيات", icon: "◎" },
     ];
   }, [role]);
 
@@ -165,6 +188,59 @@ export default function Home() {
     return () => { active = false; };
   }, [view]);
 
+  useEffect(() => {
+    const savedTheme = window.localStorage.getItem("albayati-theme");
+    document.documentElement.dataset.theme = savedTheme === "dark" ? "dark" : "light";
+  }, []);
+
+  useEffect(() => {
+    if (view !== "reports") return;
+    let active = true;
+    fetch(`/api/reports?period=${reportPeriod}&date=${reportDate}`)
+      .then(async (response) => {
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "تعذر تحميل التقرير");
+        if (active) setReportData(data);
+      })
+      .catch((error) => active && notify(error instanceof Error ? error.message : "تعذر تحميل التقرير", "info"))
+      .finally(() => active && setReportLoading(false));
+    return () => { active = false; };
+  }, [view, reportPeriod, reportDate]);
+
+  useEffect(() => {
+    if (view !== "accessRequests" || role !== "admin") return;
+    let active = true;
+    fetch("/api/access-requests")
+      .then(async (response) => {
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "تعذر تحميل طلبات الحسابات");
+        if (active) setAccessRequests(data.requests || []);
+      })
+      .catch((error) => active && notify(error instanceof Error ? error.message : "تعذر تحميل طلبات الحسابات", "info"))
+      .finally(() => active && setAccessLoading(false));
+    return () => { active = false; };
+  }, [view, role]);
+
+  useEffect(() => {
+    let active = true;
+    getSupabaseBrowser().then(async (supabase) => {
+      const { data } = await supabase.auth.getSession();
+      const stored = window.localStorage.getItem("albayati-access-draft");
+      if (!active || !data.session || !stored) return;
+      const draft = JSON.parse(stored) as AccessDraft;
+      const response = await fetch("/api/access-requests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${data.session.access_token}` },
+        body: JSON.stringify(draft),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "تعذر تسجيل طلب الحساب");
+      window.localStorage.removeItem("albayati-access-draft");
+      notify("تم تسجيل طلبك، وسيظهر لمدير النظام للموافقة", "success");
+    }).catch(() => undefined);
+    return () => { active = false; };
+  }, []);
+
   function changeRole(nextRole: Role) {
     setRole(nextRole);
     setView("overview");
@@ -172,6 +248,8 @@ export default function Home() {
   }
 
   function navigateTo(nextView: View) {
+    if (nextView === "reports") setReportLoading(true);
+    if (nextView === "accessRequests") setAccessLoading(true);
     setView(nextView);
     setSidebarExpanded(false);
   }
@@ -179,6 +257,64 @@ export default function Home() {
   function notify(message: string, kind: "success" | "info" = "success") {
     setToast({ message, kind });
     window.setTimeout(() => setToast(null), 3000);
+  }
+
+  function toggleTheme() {
+    const nextTheme = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+    document.documentElement.dataset.theme = nextTheme;
+    window.localStorage.setItem("albayati-theme", nextTheme);
+  }
+
+  async function startAccessRequest(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const submitter = (event.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
+    const provider = (submitter?.value || "email") as "email" | "google" | "apple";
+    const values = new FormData(form);
+    const draft: AccessDraft = {
+      fullName: String(values.get("fullName") || "").trim(),
+      requestedRole: String(values.get("requestedRole") || "").trim(),
+      specialty: String(values.get("specialty") || "").trim(),
+    };
+    const email = String(values.get("email") || "").trim();
+    setAccessSaving(true);
+    try {
+      window.localStorage.setItem("albayati-access-draft", JSON.stringify(draft));
+      const supabase = await getSupabaseBrowser();
+      const redirectTo = `${window.location.origin}/`;
+      if (provider === "email") {
+        const { error } = await supabase.auth.signInWithOtp({
+          email,
+          options: { emailRedirectTo: redirectTo, data: { full_name: draft.fullName } },
+        });
+        if (error) throw error;
+        setAccessOpen(false);
+        notify("أرسلنا رابط التحقق إلى بريدك؛ افتحه لإكمال الطلب", "success");
+      } else {
+        const { error } = await supabase.auth.signInWithOAuth({ provider, options: { redirectTo } });
+        if (error) throw error;
+      }
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "تعذر بدء تسجيل الحساب", "info");
+    } finally {
+      setAccessSaving(false);
+    }
+  }
+
+  async function reviewAccessRequest(id: number, decision: "مقبول" | "مرفوض") {
+    try {
+      const response = await fetch("/api/access-requests", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, decision }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "تعذر حفظ القرار");
+      setAccessRequests((rows) => rows.map((row) => row.id === id ? { ...row, ...data.request } : row));
+      notify(decision === "مقبول" ? "تمت الموافقة وإنشاء ملف الموظف" : "تم رفض الطلب");
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "تعذر حفظ القرار", "info");
+    }
   }
 
   function approveAudit(id: number) {
@@ -680,7 +816,79 @@ export default function Home() {
   }
 
   function renderReports() {
-    return <><section className="page-title"><div><p className="eyebrow">الشفافية المالية</p><h1>{role === "doctor" ? "كشف الحساب" : "التقارير والتحليلات"}</h1><p>أرقام موحّدة قابلة للتتبع من الإجراء حتى الاعتماد والدفع.</p></div><button className="secondary-action" onClick={() => notify("تم تجهيز التقرير بصيغة قابلة للطباعة")}>⇩ تصدير التقرير</button></section><section className="report-layout"><article className="panel report-card"><div className="report-top"><div><span>إجمالي آب</span><strong>{money(role === "doctor" ? 2845000 : 18240000)}</strong><small>حتى 11 آب 2026</small></div><span className="growth">↑ 12.4%</span></div><div className="report-breakdown"><div><span>استشاريات</span><b>{money(1040000)}</b><i style={{ width: "62%" }} /></div><div><span>عمليات</span><b>{money(1210000)}</b><i style={{ width: "45%" }} /></div><div><span>رقود مدفوع</span><b>{money(595000)}</b><i style={{ width: "28%" }} /></div></div></article><article className="panel report-card"><div className="panel-head"><div><h2>جودة دورة العمل</h2><p>مؤشرات الشفافية والدقة</p></div></div><div className="quality-grid"><div><strong>98.7%</strong><span>دقة المطابقة</span></div><div><strong>34 د</strong><span>متوسط الاعتماد</span></div><div><strong>0</strong><span>دفعات مكررة</span></div><div><strong>96%</strong><span>اكتمال السجلات</span></div></div></article></section><section className="panel"><div className="panel-head"><div><h2>ملخص آخر 4 أسابيع</h2><p>المبالغ المعتمدة والمعلقة</p></div></div><div className="weekly-bars">{[["20–26 تموز", 62, "2.1 م"], ["27 تموز–2 آب", 74, "2.5 م"], ["3–9 آب", 91, "3.1 م"], ["10–16 آب", 38, "1.3 م"]].map((week) => <div key={week[0]}><span>{week[0]}</span><i><b style={{ width: `${week[1]}%` }} /></i><strong>{week[2]}</strong></div>)}</div></section></>;
+    const maxPatients = Math.max(1, ...(reportData?.dailySeries.map((day) => day.patients) || [1]));
+    const periodLabel = reportPeriod === "daily" ? "يومي" : reportPeriod === "weekly" ? "أسبوعي" : "شهري";
+    const dateFormat = new Intl.DateTimeFormat("ar-IQ-u-nu-latn", { day: "numeric", month: "short" });
+    const financialCards = reportData && role !== "doctor" ? [
+      ["الإيرادات المسجلة", money(reportData.summary.revenue), "↗"],
+      ["المصروفات", money(reportData.summary.expenses), "↘"],
+      ["الرواتب المعتمدة", money(reportData.summary.salaries), "◇"],
+      ["صافي الفترة", money(reportData.summary.net), "="],
+    ] : [];
+    return <>
+      <section className="page-title report-heading"><div><p className="eyebrow">بيانات مباشرة من قاعدة المستشفى</p><h1>التقارير اليومية والأسبوعية والشهرية</h1><p>اختر التاريخ والفترة لعرض أرقام قابلة للتتبع دون بيانات افتراضية.</p></div><button className="secondary-action" onClick={() => window.print()}>⇩ طباعة التقرير</button></section>
+      <section className="panel report-controls" aria-label="مرشحات التقرير">
+        <div className="period-switch">{(["daily", "weekly", "monthly"] as const).map((period) => <button key={period} className={reportPeriod === period ? "active" : ""} onClick={() => { setReportLoading(true); setReportPeriod(period); }}>{period === "daily" ? "يومي" : period === "weekly" ? "أسبوعي" : "شهري"}</button>)}</div>
+        <label className="report-date"><span>التاريخ المرجعي</span><input type="date" value={reportDate} onChange={(event) => { setReportLoading(true); setReportDate(event.target.value); }} /></label>
+        <div className="live-data"><i /><span><b>بيانات مباشرة</b><small>{reportData ? `${reportData.range.start} — ${reportData.range.end}` : "جارٍ الاتصال"}</small></span></div>
+      </section>
+      {reportLoading ? <section className="panel report-loading"><span className="loading-ring" /><p>جارٍ إنشاء التقرير {periodLabel}...</p></section> : reportData ? <>
+        <section className="report-kpis">
+          {[
+            ["المرضى المسجلون", IQD.format(reportData.summary.patients), "♙"],
+            ["حالات الولادة", IQD.format(reportData.summary.birthCases), "✦"],
+            ["المواليد الجدد", IQD.format(reportData.summary.newborns), "◎"],
+            ["المرضى النشطون الآن", IQD.format(reportData.summary.activePatients), "●"],
+            ["مرضى تم استلامهم", IQD.format(reportData.summary.receivedPatients), "⇄"],
+            ["تسليمات مكتملة", IQD.format(reportData.summary.acceptedHandovers), "✓"],
+            ["أيام رقود مدفوعة", IQD.format(reportData.summary.paidInpatientDays), "▣"],
+            ["دفعات معلقة", IQD.format(reportData.summary.pendingPayments), "⌛"],
+            ...financialCards,
+          ].map(([label, value, icon]) => <article key={label}><span>{icon}</span><div><small>{label}</small><strong>{value}</strong></div></article>)}
+        </section>
+        <section className="report-dashboard-grid">
+          <article className="panel report-trend"><div className="panel-head"><div><h2>حركة المرضى خلال الفترة</h2><p>التسجيلات اليومية وحالات الولادة</p></div><StatusPill tone="approved">{periodLabel}</StatusPill></div>
+            <div className="report-chart" role="img" aria-label="مخطط عدد المرضى حسب اليوم">{reportData.dailySeries.map((day) => <div key={day.date}><span className="chart-value">{IQD.format(day.patients)}</span><i><b style={{ height: `${Math.max(day.patients ? 12 : 3, (day.patients / maxPatients) * 100)}%` }} /></i><small>{dateFormat.format(new Date(`${day.date}T00:00:00Z`))}</small></div>)}</div>
+          </article>
+          <aside className="panel top-doctors"><div className="panel-head"><div><h2>الأطباء الأكثر استلامًا</h2><p>بحسب المرضى المسلّمين فعليًا</p></div></div>
+            {reportData.topDoctors.length ? <ol>{reportData.topDoctors.map((doctor, index) => <li key={doctor.name}><span>{index + 1}</span><div><b>{doctor.name}</b><small>استلم {IQD.format(doctor.patientsReceived)} مريضًا</small></div><strong>{IQD.format(doctor.patientsReceived)}</strong></li>)}</ol> : <div className="report-empty"><span>⇄</span><p><b>لا توجد تسليمات مكتملة</b><small>ستظهر النتائج عند استلام المناوبات ضمن الفترة المحددة.</small></p></div>}
+          </aside>
+        </section>
+        <section className="panel finance-table"><div className="panel-head"><div><h2>السجل اليومي التفصيلي</h2><p>أساس مراجعة الإيرادات والمصروفات والرواتب</p></div></div><div className="report-table"><div className="report-table-head"><span>التاريخ</span><span>المرضى</span><span>الولادات</span><span>الإيرادات</span><span>المصروفات</span><span>الرواتب</span></div>{reportData.dailySeries.map((day) => <div key={day.date}><b>{day.date}</b><span>{IQD.format(day.patients)}</span><span>{IQD.format(day.births)}</span><span>{money(day.revenue)}</span><span>{money(day.expenses)}</span><span>{money(day.salaries)}</span></div>)}</div></section>
+      </> : <section className="panel report-loading"><p>تعذر عرض التقرير لهذه الفترة.</p></section>}
+    </>;
+  }
+
+  function renderCapabilities() {
+    const roleCapabilities: Record<Role, { title: string; description: string; action: string }[]> = {
+      doctor: [
+        { title: "استلام المناوبة", description: "مشاهدة المرضى والأولوية والإجراء التالي ثم تأكيد انتقال المسؤولية.", action: "handover" },
+        { title: "توثيق يوم العمل", description: "إضافة الاستشاريات والولادات والرقود مع احتساب السقف تلقائيًا.", action: "days" },
+        { title: "متابعة الحساب", description: "عرض البيانات المعتمدة ومصدر كل مبلغ حسب التاريخ.", action: "reports" },
+      ],
+      chief: [
+        { title: "التدقيق والاعتماد", description: "مراجعة الإثباتات والتجاوزات قبل تحويل المبلغ إلى الحسابات.", action: "audit" },
+        { title: "إدارة المناوبات", description: "التأكد من اكتمال التسليم وعدم ضياع متابعة أي مريض.", action: "handover" },
+        { title: "ضبط السقوف", description: "تحديث سقف كل طبيب مع تطبيق قواعد الحساب الموحدة.", action: "settings" },
+      ],
+      accounts: [
+        { title: "التسجيل الطبي", description: "إنشاء ملفات المرضى وربط المواليد بملف الأم دون تكرار.", action: "registry" },
+        { title: "مطابقة المدفوعات", description: "تثبيت حالة كل يوم رقود وإعادة احتساب المستحقات.", action: "payments" },
+        { title: "التقارير المالية", description: "مراجعة الإيرادات والمصروفات والرواتب حسب الفترة.", action: "reports" },
+      ],
+      admin: [
+        { title: "الموافقة على الحسابات", description: "قبول أو رفض الطبيب أو المستخدم قبل منحه صلاحية النظام.", action: "accessRequests" },
+        { title: "لوحة التقارير", description: "متابعة المرضى والولادات والتسليمات والنتائج المالية الفعلية.", action: "reports" },
+        { title: "تسجيل الكادر", description: "إنشاء ملف الموظف وتحديد الدور والاختصاص والحالة.", action: "registry" },
+      ],
+    };
+    return <><section className="page-title"><div><p className="eyebrow">دليل تشغيلي حسب الدور</p><h1>مهامي وصلاحياتي</h1><p>كل مستخدم يرى ما يخص عمله بعبارات واضحة وخطوات مباشرة.</p></div><StatusPill tone="approved">{currentRole.label}</StatusPill></section><section className="capability-grid">{roleCapabilities[role].map((item, index) => <article className="panel capability-card" key={item.title}><span>{index + 1}</span><div><h2>{item.title}</h2><p>{item.description}</p></div><button className="text-button" onClick={() => navigateTo(item.action as View)}>فتح المهمة ←</button></article>)}</section><section className="panel safety-workflow"><div><span>✓</span><p><b>ضوابط تحمي دورة العمل</b><small>تأكيد هوية المريض · سجل زمني للتسليم · موافقة قبل تفعيل الحساب · تتبع مصدر المبلغ.</small></p></div><div><span>⇄</span><p><b>لا تضيع المتابعة بين المناوبات</b><small>تبقى مسؤولية المريض للطبيب الأول حتى يؤكد الطبيب الثاني الاستلام.</small></p></div></section></>;
+  }
+
+  function renderAccessRequests() {
+    const pendingCount = accessRequests.filter((item) => item.status === "بانتظار الموافقة").length;
+    const providerLabel = { email: "البريد الإلكتروني", google: "Google", apple: "Apple" };
+    return <><section className="page-title"><div><p className="eyebrow">مدير النظام · وضع المعاينة</p><h1>طلبات إنشاء الحسابات</h1><p>لن يدخل أي طبيب أو مستخدم جديد قبل موافقة مدير النظام.</p></div><div className="title-stat"><small>بانتظار القرار</small><strong>{IQD.format(pendingCount)}</strong></div></section><section className="demo-notice"><span>i</span><p><b>المراجعة التجريبية مفعّلة مؤقتًا</b><small>الحسابات التجريبية باقية لتجربة الأدوار؛ عند اعتماد التشغيل النهائي تُقفل هذه الشاشة بحساب المدير الحقيقي.</small></p></section><section className="panel access-list"><div className="panel-head"><div><h2>سجل الطلبات</h2><p>البريد والموفر والدور والاختصاص</p></div><button className="secondary-action" onClick={() => setAccessOpen(true)}>＋ طلب تجريبي</button></div>{accessLoading ? <div className="registry-empty"><span className="loading-ring" /><p>جارٍ تحميل الطلبات...</p></div> : accessRequests.length ? accessRequests.map((item) => <div className="access-row" key={item.id}><span className="record-avatar employee">{item.fullName[0]}</span><p><b>{item.fullName}</b><small>{item.email} · {providerLabel[item.provider]} · {item.requestedRole} · {item.specialty}</small></p><StatusPill tone={item.status === "مقبول" ? "approved" : item.status === "مرفوض" ? "returned" : "pending"}>{item.status}</StatusPill>{item.status === "بانتظار الموافقة" && <div className="access-actions"><button onClick={() => reviewAccessRequest(item.id, "مقبول")}>قبول</button><button onClick={() => reviewAccessRequest(item.id, "مرفوض")}>رفض</button></div>}</div>) : <div className="report-empty"><span>♙</span><p><b>لا توجد طلبات حتى الآن</b><small>تظهر هنا الطلبات بعد تحقق المستخدم من بريده أو حسابه الخارجي.</small></p></div>}</section></>;
   }
 
   function renderDays() {
@@ -695,6 +903,8 @@ export default function Home() {
     if (view === "personalSalary") return renderPersonalSalary();
     if (view === "settings") return renderSettings();
     if (view === "reports") return renderReports();
+    if (view === "capabilities") return renderCapabilities();
+    if (view === "accessRequests") return renderAccessRequests();
     if (view === "days") return renderDays();
     if (role === "chief") return renderChiefDashboard();
     if (role === "accounts") return renderAccountsDashboard();
@@ -719,7 +929,7 @@ export default function Home() {
         <header className="topbar">
           <div className="mobile-brand"><button type="button" className="menu-trigger" aria-label="إظهار القائمة الجانبية" onClick={() => setSidebarExpanded(true)}>☰</button><span>ب</span><b>البياتي</b></div>
           <label className="global-search"><span>⌕</span><input aria-label="البحث في النظام" placeholder="ابحث عن مريض، طبيب أو يوم عمل..." /></label>
-          <div className="top-actions"><button className="icon-button" aria-label="الإشعارات"><span>♢</span><i /></button><span className="divider" /><div className="role-picker"><span className="user-avatar">{currentRole.name.split(" ")[1]?.[0] || "ب"}</span><div><b>{currentRole.name}</b><small>{currentRole.label}</small></div><select aria-label="تبديل الدور للمعاينة" value={role} onChange={(event) => changeRole(event.target.value as Role)}>{roles.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></div></div>
+          <div className="top-actions"><span className="demo-chip">وضع تجريبي</span><button className="account-request-button" onClick={() => setAccessOpen(true)}>طلب حساب</button><button className="theme-button" aria-label="تبديل الوضع الليلي والنهاري" title="ليلي / نهاري" onClick={toggleTheme}><span className="theme-sun">☀</span><span className="theme-moon">☾</span></button><button className="icon-button" aria-label="الإشعارات"><span>♢</span><i /></button><span className="divider" /><div className="role-picker"><span className="user-avatar">{currentRole.name.split(" ")[1]?.[0] || "ب"}</span><div><b>{currentRole.name}</b><small>{currentRole.label}</small></div><select aria-label="تبديل الحساب التجريبي" value={role} onChange={(event) => changeRole(event.target.value as Role)}>{roles.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></div></div>
         </header>
         <main>{renderContent()}</main>
         <nav className="mobile-nav" aria-label="قائمة الهاتف">{navItems.slice(0, 4).map((item) => <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => navigateTo(item.id)}><Icon>{item.icon}</Icon><small>{item.label.split(" ")[0]}</small></button>)}</nav>
@@ -732,6 +942,19 @@ export default function Home() {
         <div className="entry-section"><div className="section-label"><span>2</span><div><b>العمليات والرقود</b><small>تدخل ضمن السقف اليومي</small></div></div><div className="procedure-inputs"><label><span>ولادة طبيعية</span><input type="number" min="0" value={births} onChange={(event) => setBirths(Number(event.target.value))} /></label><label><span>عملية قيصرية</span><input type="number" min="0" value={cesareans} onChange={(event) => setCesareans(Number(event.target.value))} /></label><label><span>حالات رقود مدفوعة</span><input type="number" min="0" value={inpatients} onChange={(event) => setInpatients(Number(event.target.value))} /></label></div></div>
         <div className="calculation-box"><div><span>المبلغ الأولي</span><b>{money(dailyCalculation.enteredTotal)}</b></div>{capDiscount > 0 && <div className="discount-line"><span>خصم تجاوز السقف</span><b>− {money(capDiscount)}</b></div>}<div className="final-line"><span>المبلغ المتوقع بعد القواعد</span><strong>{money(estimatedTotal)}</strong></div></div>
         <div className="modal-actions"><button type="button" className="secondary-action" onClick={() => setAddOpen(false)}>إلغاء</button><button className="primary-action" type="submit">حفظ وإغلاق <span>←</span></button></div>
+      </form></div>}
+
+      {accessOpen && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setAccessOpen(false)}><form className="entry-modal access-modal" onSubmit={startAccessRequest}>
+        <div className="modal-head"><div><p className="eyebrow">حساب جديد بموافقة الإدارة</p><h2>طلب دخول إلى نظام البياتي</h2><p>تحقق من هويتك أولًا، ثم يراجع مدير النظام الدور والاختصاص.</p></div><button type="button" className="close-button" aria-label="إغلاق" onClick={() => setAccessOpen(false)}>×</button></div>
+        <div className="demo-notice compact"><span>i</span><p><b>الحسابات التجريبية ستبقى ظاهرة</b><small>يمكن للإدارة مواصلة تجربة النظام أثناء جمع طلبات المستخدمين الحقيقيين.</small></p></div>
+        <div className="access-fields">
+          <label className="form-field"><span>الاسم الكامل</span><input name="fullName" required placeholder="الاسم كما سيظهر في النظام" /></label>
+          <label className="form-field"><span>البريد الإلكتروني</span><input name="email" type="email" required dir="ltr" placeholder="name@gmail.com" /></label>
+          <label className="form-field"><span>الدور المطلوب</span><select name="requestedRole" required defaultValue="طبيب مقيم"><option>طبيب مقيم</option><option>رئيس الأطباء</option><option>قسم الحسابات</option><option>موظف تسجيل</option><option>الإدارة العليا</option></select></label>
+          <label className="form-field"><span>الاختصاص</span><select name="specialty" required defaultValue="النسائية والتوليد"><option>النسائية والتوليد</option><option>الأطفال وحديثو الولادة</option><option>التخدير</option><option>التمريض</option><option>الحسابات</option><option>التسجيل والاستعلامات</option><option>إدارة المستشفى</option></select></label>
+        </div>
+        <div className="oauth-actions"><button name="provider" value="email" disabled={accessSaving}><span>@</span> المتابعة عبر البريد الإلكتروني</button><button name="provider" value="google" disabled={accessSaving}><span>G</span> المتابعة عبر Google</button><button name="provider" value="apple" disabled={accessSaving}><span>●</span> المتابعة عبر Apple</button></div>
+        <p className="access-footnote">لن يُفعّل الحساب بعد التحقق مباشرة؛ يبقى بحالة «بانتظار الموافقة» حتى يعتمد مدير النظام الطلب.</p>
       </form></div>}
 
       {detailOpen && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setDetailOpen(false)}><aside className="detail-drawer"><div className="modal-head"><div><p className="eyebrow">الأربعاء، 6 آب 2026</p><h2>تفاصيل يوم العمل</h2></div><button className="close-button" onClick={() => setDetailOpen(false)}>×</button></div><StatusPill tone="returned">أُعيد للمراجعة</StatusPill><div className="review-note"><span>!</span><p><b>ملاحظة رئيس الأطباء</b>يرجى إرفاق صورة إثبات الاستشارية الخامسة ثم حفظ التعديل.</p></div><div className="detail-lines"><div><span>5 استشاريات</span><b>{money(50000)}</b></div><div><span>ولادة طبيعية · زينب علي</span><b>{money(80000)}</b></div><div><span>رقود مدفوع · حالتان</span><b>{money(50000)}</b></div><div className="subtotal"><span>المبلغ الأولي</span><b>{money(180000)}</b></div><div className="discount-line"><span>خصم التدقيق</span><b>− {money(55000)}</b></div><div className="total"><span>المبلغ الحالي</span><strong>{money(125000)}</strong></div></div><button className="upload-box drawer-upload" onClick={() => notify("تمت إضافة صورة الإثبات بنجاح")}><span>▧</span><b>إضافة الإثبات الناقص</b><small>ثم حفظ اليوم ليظهر للتدقيق</small></button><button className="primary-action full" onClick={() => { setDetailOpen(false); notify("حُفظ اليوم بعد استكمال الإثبات وظهر للتدقيق"); }}>حفظ التعديل</button></aside></div>}
