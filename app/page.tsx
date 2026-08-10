@@ -12,13 +12,6 @@ type EmployeeRecord = { id: number; fullName: string; employeeNumber: string; ro
 const IQD = new Intl.NumberFormat("ar-IQ");
 const money = (value: number) => `${IQD.format(value)} د.ع`;
 
-const roleLabels: Record<Role, string> = {
-  doctor: "طبيب مقيم",
-  chief: "رئيس الأطباء",
-  accounts: "قسم الحسابات",
-  admin: "الإدارة العليا",
-};
-
 const recentDays = [
   { id: 1, day: "الأحد", date: "10 آب 2026", status: "معتمد", amount: 245000, tone: "approved", details: "8 استشاريات · ولادة طبيعية · 3 حالات رقود" },
   { id: 2, day: "السبت", date: "9 آب 2026", status: "تدشيك الراتب", amount: 190000, tone: "pending", details: "6 استشاريات · عملية قيصرية" },
@@ -80,7 +73,7 @@ export default function Home() {
   const [search, setSearch] = useState("");
   const [registryTab, setRegistryTab] = useState<"patient" | "employee">("patient");
   const [registrySaving, setRegistrySaving] = useState(false);
-  const [registryLoading, setRegistryLoading] = useState(false);
+  const [registryLoading, setRegistryLoading] = useState(true);
   const [registeredPatients, setRegisteredPatients] = useState<PatientRecord[]>([]);
   const [registeredEmployees, setRegisteredEmployees] = useState<EmployeeRecord[]>([]);
   const [employeeRole, setEmployeeRole] = useState("طبيب مقيم");
@@ -126,7 +119,6 @@ export default function Home() {
   useEffect(() => {
     if (view !== "registry") return;
     let active = true;
-    setRegistryLoading(true);
     fetch("/api/registry")
       .then(async (response) => {
         const data = await response.json();
@@ -573,7 +565,7 @@ export default function Home() {
         <nav className="mobile-nav" aria-label="قائمة الهاتف">{navItems.slice(0, 4).map((item) => <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => setView(item.id)}><Icon>{item.icon}</Icon><small>{item.label.split(" ")[0]}</small></button>)}</nav>
       </div>
 
-      {addOpen && <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setAddOpen(false)}><form className="entry-modal" onSubmit={submitDay}>
+      {addOpen && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setAddOpen(false)}><form className="entry-modal" onSubmit={submitDay}>
         <div className="modal-head"><div><p className="eyebrow">إدخال سريع · 11 آب 2026</p><h2>تسجيل يوم عمل جديد</h2><p>سيطبّق محرك البياتي القواعد قبل الحفظ.</p></div><button type="button" className="close-button" onClick={() => setAddOpen(false)}>×</button></div>
         <div className="smart-strip"><span className="ai-orb">✦</span><p><b>الحساب الذكي نشط</b><small>الحد: 10 استشاريات · سقف العمليات والرقود: {money(200000)}</small></p></div>
         <div className="entry-section"><div className="section-label"><span>1</span><div><b>الاستشاريات</b><small>تُحسب خارج السقف اليومي</small></div></div><label className="number-field"><span>عدد الاستشاريات</span><div><button type="button" onClick={() => setConsultations(Math.max(0, consultations - 1))}>−</button><input type="number" min="0" value={consultations} onChange={(event) => setConsultations(Number(event.target.value))} /><button type="button" onClick={() => setConsultations(consultations + 1)}>＋</button></div></label>{consultations > 10 && <p className="inline-warning">سيُحتسب 10 فقط حسب سقفك الحالي.</p>}<button className="upload-box" type="button" onClick={() => notify("يمكنك اختيار الصور من الكاميرا أو الجهاز", "info")}><span>▧</span><b>إرفاق صور الإثباتات</b><small>الكاميرا أو معرض الصور</small></button></div>
@@ -582,7 +574,7 @@ export default function Home() {
         <div className="modal-actions"><button type="button" className="secondary-action" onClick={() => setAddOpen(false)}>إلغاء</button><button className="primary-action" type="submit">حفظ وإغلاق <span>←</span></button></div>
       </form></div>}
 
-      {detailOpen && <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setDetailOpen(false)}><aside className="detail-drawer"><div className="modal-head"><div><p className="eyebrow">الأربعاء، 6 آب 2026</p><h2>تفاصيل يوم العمل</h2></div><button className="close-button" onClick={() => setDetailOpen(false)}>×</button></div><StatusPill tone="returned">أُعيد للمراجعة</StatusPill><div className="review-note"><span>!</span><p><b>ملاحظة رئيس الأطباء</b>يرجى إرفاق صورة إثبات الاستشارية الخامسة ثم حفظ التعديل.</p></div><div className="detail-lines"><div><span>5 استشاريات</span><b>{money(50000)}</b></div><div><span>ولادة طبيعية · زينب علي</span><b>{money(80000)}</b></div><div><span>رقود مدفوع · حالتان</span><b>{money(50000)}</b></div><div className="subtotal"><span>المبلغ الأولي</span><b>{money(180000)}</b></div><div className="discount-line"><span>خصم التدقيق</span><b>− {money(55000)}</b></div><div className="total"><span>المبلغ الحالي</span><strong>{money(125000)}</strong></div></div><button className="upload-box drawer-upload" onClick={() => notify("تمت إضافة صورة الإثبات بنجاح")}><span>▧</span><b>إضافة الإثبات الناقص</b><small>ثم حفظ اليوم ليظهر للتدقيق</small></button><button className="primary-action full" onClick={() => { setDetailOpen(false); notify("حُفظ اليوم بعد استكمال الإثبات وظهر للتدقيق"); }}>حفظ التعديل</button></aside></div>}
+      {detailOpen && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setDetailOpen(false)}><aside className="detail-drawer"><div className="modal-head"><div><p className="eyebrow">الأربعاء، 6 آب 2026</p><h2>تفاصيل يوم العمل</h2></div><button className="close-button" onClick={() => setDetailOpen(false)}>×</button></div><StatusPill tone="returned">أُعيد للمراجعة</StatusPill><div className="review-note"><span>!</span><p><b>ملاحظة رئيس الأطباء</b>يرجى إرفاق صورة إثبات الاستشارية الخامسة ثم حفظ التعديل.</p></div><div className="detail-lines"><div><span>5 استشاريات</span><b>{money(50000)}</b></div><div><span>ولادة طبيعية · زينب علي</span><b>{money(80000)}</b></div><div><span>رقود مدفوع · حالتان</span><b>{money(50000)}</b></div><div className="subtotal"><span>المبلغ الأولي</span><b>{money(180000)}</b></div><div className="discount-line"><span>خصم التدقيق</span><b>− {money(55000)}</b></div><div className="total"><span>المبلغ الحالي</span><strong>{money(125000)}</strong></div></div><button className="upload-box drawer-upload" onClick={() => notify("تمت إضافة صورة الإثبات بنجاح")}><span>▧</span><b>إضافة الإثبات الناقص</b><small>ثم حفظ اليوم ليظهر للتدقيق</small></button><button className="primary-action full" onClick={() => { setDetailOpen(false); notify("حُفظ اليوم بعد استكمال الإثبات وظهر للتدقيق"); }}>حفظ التعديل</button></aside></div>}
       {toast && <div className={`toast ${toast.kind}`}><span>{toast.kind === "success" ? "✓" : "i"}</span>{toast.message}</div>}
     </div>
   );
