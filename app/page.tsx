@@ -1,11 +1,12 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { buildNewbornNames, calculateDailyCompensation, getInitialPrice } from "../lib/rules-engine";
 
 type Role = "doctor" | "chief" | "accounts" | "admin";
-type View = "overview" | "days" | "audit" | "payments" | "reports" | "settings" | "registry";
+type View = "overview" | "days" | "audit" | "payments" | "reports" | "settings" | "registry" | "personalSalary";
 type Toast = { message: string; kind: "success" | "info" } | null;
-type PatientRecord = { id: number; fullName: string; fileNumber: string; department: string; admissionDate: string; paymentCategory: string };
+type PatientRecord = { id: number; fullName: string; fileNumber: string; department: string; admissionDate: string; paymentCategory: string; entryType: string; patientStatus: string; billingMode: string; newbornCount?: number };
 type EmployeeRecord = { id: number; fullName: string; employeeNumber: string; role: string; specialty: string; status: string };
 
 const IQD = new Intl.NumberFormat("ar-IQ");
@@ -20,7 +21,7 @@ const roleLabels: Record<Role, string> = {
 
 const recentDays = [
   { id: 1, day: "الأحد", date: "10 آب 2026", status: "معتمد", amount: 245000, tone: "approved", details: "8 استشاريات · ولادة طبيعية · 3 حالات رقود" },
-  { id: 2, day: "السبت", date: "9 آب 2026", status: "قيد التدقيق", amount: 190000, tone: "pending", details: "6 استشاريات · عملية قيصرية" },
+  { id: 2, day: "السبت", date: "9 آب 2026", status: "تدشيك الراتب", amount: 190000, tone: "pending", details: "6 استشاريات · عملية قيصرية" },
   { id: 3, day: "الخميس", date: "7 آب 2026", status: "معتمد", amount: 220000, tone: "approved", details: "10 استشاريات · حالتا رقود" },
   { id: 4, day: "الأربعاء", date: "6 آب 2026", status: "أُعيد للمراجعة", amount: 125000, tone: "returned", details: "5 استشاريات · إثبات ناقص" },
 ];
@@ -83,12 +84,16 @@ export default function Home() {
   const [registeredPatients, setRegisteredPatients] = useState<PatientRecord[]>([]);
   const [registeredEmployees, setRegisteredEmployees] = useState<EmployeeRecord[]>([]);
   const [employeeRole, setEmployeeRole] = useState("طبيب مقيم");
+  const [patientName, setPatientName] = useState("");
+  const [patientEntryType, setPatientEntryType] = useState("استشارية");
+  const [newbornCount, setNewbornCount] = useState(0);
+  const [patientInitialPrice, setPatientInitialPrice] = useState(getInitialPrice("استشارية"));
 
   const currentRole = roles.find((item) => item.id === role)!;
-  const consultationPaid = Math.min(consultations, 10) * 10000;
-  const cappedWork = births * 80000 + cesareans * 120000 + inpatients * 25000;
-  const capDiscount = Math.max(0, cappedWork - 200000);
-  const estimatedTotal = consultationPaid + Math.min(cappedWork, 200000);
+  const dailyCalculation = calculateDailyCompensation({ consultations, births, cesareans, paidInpatients: inpatients, maxConsultations: 10, combinedCap: 200000 });
+  const capDiscount = dailyCalculation.capDiscount;
+  const estimatedTotal = dailyCalculation.approvedTotal;
+  const newbornNames = buildNewbornNames(patientName, newbornCount);
 
   const navItems = useMemo(() => {
     if (role === "doctor") return [
@@ -98,6 +103,7 @@ export default function Home() {
     ];
     if (role === "chief") return [
       { id: "overview" as View, label: "الرئيسية", icon: "⌂" },
+      { id: "personalSalary" as View, label: "راتبي الشخصي", icon: "◇" },
       { id: "audit" as View, label: "التدقيق والاعتماد", icon: "✓" },
       { id: "settings" as View, label: "سقوف الأطباء", icon: "⌁" },
       { id: "reports" as View, label: "التقارير", icon: "≋" },
@@ -150,7 +156,7 @@ export default function Home() {
   function approveAudit(id: number) {
     const item = auditRows.find((row) => row.id === id);
     setAuditRows((rows) => rows.filter((row) => row.id !== id));
-    notify(`تم اعتماد يوم ${item?.doctor} وإشعاره بالمبلغ النهائي`);
+    notify(`تم اعتماد يوم ${item?.doctor} وظهر المبلغ النهائي في حسابه`);
   }
 
   function cyclePayment(patientId: number, dayIndex: number) {
@@ -164,7 +170,7 @@ export default function Home() {
   function submitDay(event: FormEvent) {
     event.preventDefault();
     setAddOpen(false);
-    notify("حُفظ يوم العمل وأُرسل إلى رئيس الأطباء للتدقيق");
+    notify("حُفظ يوم العمل وظهر تلقائيًا بحالة تدشيك الراتب");
   }
 
   async function submitRegistry(event: FormEvent<HTMLFormElement>, kind: "patient" | "employee") {
@@ -189,10 +195,32 @@ export default function Home() {
       }
       form.reset();
       setEmployeeRole("طبيب مقيم");
+      if (kind === "patient") {
+        setPatientName("");
+        setPatientEntryType("استشارية");
+        setNewbornCount(0);
+        setPatientInitialPrice(getInitialPrice("استشارية"));
+      }
     } catch (error) {
       notify(error instanceof Error ? error.message : "تعذر حفظ السجل", "info");
     } finally {
       setRegistrySaving(false);
+    }
+  }
+
+  async function updatePatientLifecycle(patientId: number, action: "convert_to_inpatient" | "discharge") {
+    try {
+      const response = await fetch("/api/registry", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ patientId, action }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "تعذر تحديث مسار المريضة");
+      setRegisteredPatients((rows) => rows.map((item) => item.id === patientId ? { ...item, ...data.patient } : item));
+      notify(data.message);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "تعذر تحديث مسار المريضة", "info");
     }
   }
 
@@ -307,6 +335,19 @@ export default function Home() {
             <button className="assistant-link" onClick={() => setView("audit")}>ابدأ بالأولوية الأعلى <span>←</span></button>
           </aside>
         </section>
+      </>
+    );
+  }
+
+  function renderPersonalSalary() {
+    return (
+      <>
+        <section className="page-title"><div><p className="eyebrow">حساب رئيس الأطباء كطبيب</p><h1>راتبي الشخصي</h1><p>تفاصيل أجرك منفصلة تمامًا عن صلاحيات التدقيق والاعتماد.</p></div><StatusPill tone="pending">تدشيك الراتب</StatusPill></section>
+        <section className="doctor-grid">
+          <article className="earnings-card"><div className="earnings-head"><div><span>راتب آب الحالي</span><strong>{money(3215000)}</strong></div><span className="growth">↑ 9.8%</span></div><Sparkline /><div className="earnings-foot"><span>من 1 إلى 11 آب</span><b>7 أيام عمل معتمدة</b></div></article>
+          <div className="metric-stack"><article className="metric-card teal"><div className="metric-icon">⌁</div><div><span>الاستشاريات</span><strong>{money(1150000)}</strong><small>115 استشارية معتمدة</small></div></article><article className="metric-card sand"><div className="metric-icon">✦</div><div><span>القيصريات والرقود</span><strong>{money(2065000)}</strong><small>بعد تطبيق السقف اليومي</small></div></article></div>
+        </section>
+        <section className="panel recent-panel"><div className="panel-head"><div><h2>أيام عملي الأخيرة</h2><p>يمكنك فتح أي Call والاطلاع على احتسابه بالتفصيل</p></div><span className="ai-tag">لا تؤثر صلاحيات التدقيق على هذا الحساب</span></div><div className="day-list">{recentDays.slice(0, 3).map((item) => <button className="day-row" key={item.id} onClick={() => setDetailOpen(true)}><span className="date-tile"><b>{item.date.split(" ")[0]}</b><small>آب</small></span><span className="day-copy"><b>{item.day}</b><small>{item.details}</small></span><StatusPill tone={item.tone}>{item.status}</StatusPill><strong className="row-amount">{money(item.amount)}</strong><span className="chevron">‹</span></button>)}</div></section>
       </>
     );
   }
@@ -429,20 +470,25 @@ export default function Home() {
                 <div className="registry-form-head"><div><span>♙</span><p><b>بيانات المريض</b><small>الحقول المعلّمة مطلوبة لإنشاء الملف</small></p></div><StatusPill tone="approved">نموذج جديد</StatusPill></div>
                 <div className="form-section-title"><span>1</span><div><b>المعلومات الأساسية</b><small>الهوية ووسائل التواصل</small></div></div>
                 <div className="registry-fields">
-                  <label className="form-field wide"><span>الاسم الثلاثي للمريض <b>*</b></span><input name="fullName" required placeholder="مثال: زينب علي حسن" /></label>
+                  <label className="form-field wide"><span>الاسم الثلاثي للمريضة <b>*</b></span><input name="fullName" required value={patientName} onChange={(event) => setPatientName(event.target.value)} placeholder="مثال: زهراء علي خلف" /></label>
                   <label className="form-field"><span>رقم الملف <b>*</b></span><input name="fileNumber" required defaultValue={`P-${1050 + registeredPatients.length}`} dir="ltr" /></label>
                   <label className="form-field"><span>تاريخ الميلاد</span><input name="birthDate" type="date" /></label>
-                  <label className="form-field"><span>الجنس <b>*</b></span><select name="gender" required defaultValue=""><option value="" disabled>اختر الجنس</option><option>أنثى</option><option>ذكر</option></select></label>
+                  <label className="form-field"><span>الجنس <b>*</b></span><select name="gender" required defaultValue="أنثى"><option>أنثى</option><option>ذكر</option></select></label>
                   <label className="form-field"><span>رقم الهاتف</span><input name="phone" type="tel" placeholder="07XX XXX XXXX" dir="ltr" /></label>
                 </div>
                 <div className="form-section-title"><span>2</span><div><b>بيانات الدخول</b><small>القسم والطبيب وتصنيف الدفع</small></div></div>
                 <div className="registry-fields">
                   <label className="form-field"><span>تاريخ الدخول <b>*</b></span><input name="admissionDate" type="date" required defaultValue="2026-08-11" /></label>
+                  <label className="form-field"><span>نوع الدخول <b>*</b></span><select name="entryType" required value={patientEntryType} onChange={(event) => { setPatientEntryType(event.target.value); setPatientInitialPrice(getInitialPrice(event.target.value)); if (!event.target.value.includes("ولادة") && !event.target.value.includes("قيصرية")) setNewbornCount(0); }}><option>استشارية</option><option>رقود</option><option>ولادة طبيعية</option><option>عملية قيصرية</option></select></label>
+                  <label className="form-field"><span>{patientEntryType === "رقود" ? "تسعيرة يوم الرقود" : "التسعيرة الأولية"} (د.ع)</span><input name="initialPrice" type="number" min="0" step="1000" value={patientInitialPrice} onChange={(event) => setPatientInitialPrice(Number(event.target.value))} /></label>
                   <label className="form-field"><span>القسم الطبي <b>*</b></span><select name="department" required defaultValue=""><option value="" disabled>اختر القسم</option><option>النسائية والتوليد</option><option>الجراحة العامة</option><option>الطب الباطني</option><option>طب الأطفال</option><option>الطوارئ</option><option>العناية المركزة</option></select></label>
                   <label className="form-field"><span>الطبيب المسؤول</span><select name="attendingDoctor" defaultValue=""><option value="">يُحدد لاحقًا</option><option>د. ليلى قاسم</option><option>د. أحمد البياتي</option><option>د. سارة محمود</option><option>د. مريم حسن</option></select></label>
                   <label className="form-field"><span>تصنيف الدفع <b>*</b></span><select name="paymentCategory" required defaultValue="نقدي"><option>نقدي</option><option>مجاني</option><option>تأمين</option><option>آجل</option></select></label>
+                  {(patientEntryType === "ولادة طبيعية" || patientEntryType === "عملية قيصرية") && <label className="form-field"><span>عدد المواليد</span><select name="newbornCount" value={newbornCount} onChange={(event) => setNewbornCount(Number(event.target.value))}><option value="0">يُسجل لاحقًا</option><option value="1">مولود واحد</option><option value="2">توأم</option><option value="3">ثلاثة توائم</option><option value="4">أربعة توائم</option></select></label>}
                   <label className="form-field full"><span>ملاحظات أولية</span><textarea name="notes" rows={3} placeholder="الحالة عند الدخول أو أي معلومات مهمة للكادر..." /></label>
                 </div>
+                {(patientEntryType === "ولادة طبيعية" || patientEntryType === "عملية قيصرية") && <div className="pricing-rule-note"><span>↻</span><p><b>قاعدة منع الازدواجية مفعّلة</b><small>إذا تحولت الحالة إلى رقود، يُبطل النظام تسعيرة الولادة ويحفظ سبب الإلغاء، ثم يبدأ التسعير التراكمي للرقود.</small></p></div>}
+                {newbornNames.length > 0 && <div className="newborn-preview"><div><span>♙</span><p><b>السجلات التي سيُنشئها النظام</b><small>مرتبطة تلقائيًا بملف الأم ومنفصلة طبيًا وماليًا</small></p></div><ul>{newbornNames.map((name, index) => <li key={name}><i>{index + 1}</i>{name}<StatusPill tone="approved">مولود جديد</StatusPill></li>)}</ul></div>}
                 <div className="registry-submit"><p><span>✓</span><small>سيظهر المريض مباشرة في البحث وحالات الدفع بعد التسجيل.</small></p><button className="primary-action" disabled={registrySaving}>{registrySaving ? "جارٍ الحفظ..." : "حفظ ملف المريض"}<span>←</span></button></div>
               </form>
             ) : (
@@ -458,8 +504,8 @@ export default function Home() {
                 </div>
                 <div className="form-section-title"><span>2</span><div><b>الدور والاختصاص</b><small>تُبنى الصلاحيات بناءً على الدور</small></div></div>
                 <div className="registry-fields">
-                  <label className="form-field"><span>الدور الوظيفي <b>*</b></span><select name="role" required value={employeeRole} onChange={(event) => setEmployeeRole(event.target.value)}><option>طبيب مقيم</option><option>رئيس الأطباء</option><option>موظف حسابات</option><option>الإدارة العليا</option></select></label>
-                  <label className="form-field"><span>الاختصاص <b>*</b></span><select name="specialty" required defaultValue=""><option value="" disabled>اختر الاختصاص</option><option>النسائية والتوليد</option><option>الجراحة العامة</option><option>الطب الباطني</option><option>طب الأطفال</option><option>التخدير والعناية</option><option>الأشعة</option><option>المختبر</option><option>الحسابات</option><option>الإدارة</option></select></label>
+                  <label className="form-field"><span>الدور الوظيفي <b>*</b></span><select name="role" required value={employeeRole} onChange={(event) => setEmployeeRole(event.target.value)}><option>طبيب مقيم</option><option>رئيس الأطباء</option><option>موظف استقبال</option><option>موظف حسابات</option><option>الإدارة العليا</option></select></label>
+                  <label className="form-field"><span>الاختصاص <b>*</b></span><select name="specialty" required defaultValue=""><option value="" disabled>اختر الاختصاص</option><option>النسائية والتوليد</option><option>الجراحة العامة</option><option>الطب الباطني</option><option>طب الأطفال</option><option>التخدير والعناية</option><option>الأشعة</option><option>المختبر</option><option>الاستقبال</option><option>الحسابات</option><option>الإدارة</option></select></label>
                   <label className="form-field"><span>حالة الحساب</span><select name="status" defaultValue="نشط"><option>نشط</option><option>موقوف مؤقتًا</option><option>إجازة</option></select></label>
                 </div>
                 {isDoctorRole && <div className="doctor-rules"><div className="smart-strip"><span className="ai-orb">✦</span><p><b>قواعد الطبيب المالية</b><small>تُستخدم تلقائيًا عند احتساب يوم العمل.</small></p></div><label className="form-field"><span>أقصى استشاريات يوميًا</span><input name="maxConsultations" type="number" min="0" defaultValue="10" /></label><label className="form-field"><span>السقف اليومي (د.ع)</span><input name="dailyCap" type="number" min="0" step="10000" defaultValue="200000" /></label></div>}
@@ -471,7 +517,7 @@ export default function Home() {
 
         <section className="panel registry-recent">
           <div className="panel-head"><div><h2>آخر السجلات</h2><p>{activeTab === "patient" ? "المرضى الذين أضيفوا مؤخرًا" : "الموظفون الذين أضيفوا مؤخرًا"}</p></div><span className="records-count">{latest.length} سجل</span></div>
-          {registryLoading ? <div className="registry-empty"><span className="loading-ring" /><p>جارٍ تحميل السجلات...</p></div> : latest.length === 0 ? <div className="registry-empty"><span>＋</span><p><b>لا توجد سجلات بعد</b><small>استخدم النموذج أعلاه لإضافة أول سجل.</small></p></div> : <div className="recent-records">{activeTab === "patient" ? registeredPatients.map((item) => <div key={item.id}><span className="record-avatar">{item.fullName[0]}</span><p><b>{item.fullName}</b><small>{item.fileNumber} · {item.department}</small></p><StatusPill tone="approved">{item.paymentCategory}</StatusPill><time>{item.admissionDate}</time></div>) : registeredEmployees.map((item) => <div key={item.id}><span className="record-avatar employee">{item.fullName[0]}</span><p><b>{item.fullName}</b><small>{item.employeeNumber} · {item.role} · {item.specialty}</small></p><StatusPill tone="approved">{item.status}</StatusPill><time>حساب فعّال</time></div>)}</div>}
+          {registryLoading ? <div className="registry-empty"><span className="loading-ring" /><p>جارٍ تحميل السجلات...</p></div> : latest.length === 0 ? <div className="registry-empty"><span>＋</span><p><b>لا توجد سجلات بعد</b><small>استخدم النموذج أعلاه لإضافة أول سجل.</small></p></div> : <div className="recent-records">{activeTab === "patient" ? registeredPatients.map((item) => <div key={item.id}><span className="record-avatar">{item.fullName[0]}</span><p><b>{item.fullName}</b><small>{item.fileNumber} · {item.entryType || item.department} · {item.billingMode || "مقطوعي"}</small></p><StatusPill tone={item.patientStatus === "خرجت" ? "approved" : "pending"}>{item.patientStatus || "نشط"}</StatusPill><span className="lifecycle-actions">{(item.entryType === "ولادة طبيعية" || item.entryType === "عملية قيصرية") && <button onClick={() => updatePatientLifecycle(item.id, "convert_to_inpatient")}>تحويل إلى رقود</button>}{item.patientStatus !== "خرجت" && <button onClick={() => updatePatientLifecycle(item.id, "discharge")}>تسجيل خروج</button>}</span></div>) : registeredEmployees.map((item) => <div key={item.id}><span className="record-avatar employee">{item.fullName[0]}</span><p><b>{item.fullName}</b><small>{item.employeeNumber} · {item.role} · {item.specialty}</small></p><StatusPill tone="approved">{item.status}</StatusPill><time>حساب فعّال</time></div>)}</div>}
         </section>
       </>
     );
@@ -489,13 +535,14 @@ export default function Home() {
   }
 
   function renderDays() {
-    return <><section className="page-title"><div><p className="eyebrow">سجل الطبيب</p><h1>أيام العمل</h1><p>كل إدخالاتك، مرفقاتك وقرارات التدقيق في مكان واحد.</p></div><button className="primary-action" onClick={() => setAddOpen(true)}><b>＋</b> تسجيل يوم عمل</button></section><section className="panel all-days"><div className="toolbar"><div className="filters"><button className="active">الكل</button><button>معتمد</button><button>قيد التدقيق</button><button>أُعيد</button></div><label className="table-search"><span>⌕</span><input placeholder="بحث في الأيام..." /></label></div><div className="day-list">{recentDays.concat([{ id: 5, day: "الثلاثاء", date: "5 آب 2026", status: "معتمد", amount: 210000, tone: "approved", details: "7 استشاريات · ولادة طبيعية" }]).map((item) => <button className="day-row" key={item.id} onClick={() => setDetailOpen(true)}><span className="date-tile"><b>{item.date.split(" ")[0]}</b><small>آب</small></span><span className="day-copy"><b>{item.day}</b><small>{item.details}</small></span><StatusPill tone={item.tone}>{item.status}</StatusPill><strong className="row-amount">{money(item.amount)}</strong><span className="chevron">‹</span></button>)}</div></section></>;
+    return <><section className="page-title"><div><p className="eyebrow">سجل الطبيب</p><h1>أيام العمل</h1><p>كل إدخالاتك، مرفقاتك وقرارات التدقيق في مكان واحد.</p></div><button className="primary-action" onClick={() => setAddOpen(true)}><b>＋</b> تسجيل يوم عمل</button></section><section className="panel all-days"><div className="toolbar"><div className="filters"><button className="active">الكل</button><button>معتمد</button><button>تدشيك الراتب</button><button>أُعيد</button></div><label className="table-search"><span>⌕</span><input placeholder="بحث في الأيام..." /></label></div><div className="day-list">{recentDays.concat([{ id: 5, day: "الثلاثاء", date: "5 آب 2026", status: "معتمد", amount: 210000, tone: "approved", details: "7 استشاريات · ولادة طبيعية" }]).map((item) => <button className="day-row" key={item.id} onClick={() => setDetailOpen(true)}><span className="date-tile"><b>{item.date.split(" ")[0]}</b><small>آب</small></span><span className="day-copy"><b>{item.day}</b><small>{item.details}</small></span><StatusPill tone={item.tone}>{item.status}</StatusPill><strong className="row-amount">{money(item.amount)}</strong><span className="chevron">‹</span></button>)}</div></section></>;
   }
 
   function renderContent() {
     if (view === "audit") return renderAudit();
     if (view === "payments") return renderPayments();
     if (view === "registry") return renderRegistry();
+    if (view === "personalSalary") return renderPersonalSalary();
     if (view === "settings") return renderSettings();
     if (view === "reports") return renderReports();
     if (view === "days") return renderDays();
@@ -527,15 +574,15 @@ export default function Home() {
       </div>
 
       {addOpen && <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setAddOpen(false)}><form className="entry-modal" onSubmit={submitDay}>
-        <div className="modal-head"><div><p className="eyebrow">إدخال سريع · 11 آب 2026</p><h2>تسجيل يوم عمل جديد</h2><p>سيطبّق محرك البياتي القواعد قبل الإرسال.</p></div><button type="button" className="close-button" onClick={() => setAddOpen(false)}>×</button></div>
+        <div className="modal-head"><div><p className="eyebrow">إدخال سريع · 11 آب 2026</p><h2>تسجيل يوم عمل جديد</h2><p>سيطبّق محرك البياتي القواعد قبل الحفظ.</p></div><button type="button" className="close-button" onClick={() => setAddOpen(false)}>×</button></div>
         <div className="smart-strip"><span className="ai-orb">✦</span><p><b>الحساب الذكي نشط</b><small>الحد: 10 استشاريات · سقف العمليات والرقود: {money(200000)}</small></p></div>
         <div className="entry-section"><div className="section-label"><span>1</span><div><b>الاستشاريات</b><small>تُحسب خارج السقف اليومي</small></div></div><label className="number-field"><span>عدد الاستشاريات</span><div><button type="button" onClick={() => setConsultations(Math.max(0, consultations - 1))}>−</button><input type="number" min="0" value={consultations} onChange={(event) => setConsultations(Number(event.target.value))} /><button type="button" onClick={() => setConsultations(consultations + 1)}>＋</button></div></label>{consultations > 10 && <p className="inline-warning">سيُحتسب 10 فقط حسب سقفك الحالي.</p>}<button className="upload-box" type="button" onClick={() => notify("يمكنك اختيار الصور من الكاميرا أو الجهاز", "info")}><span>▧</span><b>إرفاق صور الإثباتات</b><small>الكاميرا أو معرض الصور</small></button></div>
         <div className="entry-section"><div className="section-label"><span>2</span><div><b>العمليات والرقود</b><small>تدخل ضمن السقف اليومي</small></div></div><div className="procedure-inputs"><label><span>ولادة طبيعية</span><input type="number" min="0" value={births} onChange={(event) => setBirths(Number(event.target.value))} /></label><label><span>عملية قيصرية</span><input type="number" min="0" value={cesareans} onChange={(event) => setCesareans(Number(event.target.value))} /></label><label><span>حالات رقود مدفوعة</span><input type="number" min="0" value={inpatients} onChange={(event) => setInpatients(Number(event.target.value))} /></label></div></div>
-        <div className="calculation-box"><div><span>المبلغ الأولي</span><b>{money(consultations * 10000 + cappedWork)}</b></div>{capDiscount > 0 && <div className="discount-line"><span>خصم تجاوز السقف</span><b>− {money(capDiscount + Math.max(0, consultations - 10) * 10000)}</b></div>}<div className="final-line"><span>المبلغ المتوقع بعد القواعد</span><strong>{money(estimatedTotal)}</strong></div></div>
-        <div className="modal-actions"><button type="button" className="secondary-action" onClick={() => setAddOpen(false)}>حفظ كمسودة</button><button className="primary-action" type="submit">حفظ وإرسال للتدقيق <span>←</span></button></div>
+        <div className="calculation-box"><div><span>المبلغ الأولي</span><b>{money(dailyCalculation.enteredTotal)}</b></div>{capDiscount > 0 && <div className="discount-line"><span>خصم تجاوز السقف</span><b>− {money(capDiscount)}</b></div>}<div className="final-line"><span>المبلغ المتوقع بعد القواعد</span><strong>{money(estimatedTotal)}</strong></div></div>
+        <div className="modal-actions"><button type="button" className="secondary-action" onClick={() => setAddOpen(false)}>إلغاء</button><button className="primary-action" type="submit">حفظ وإغلاق <span>←</span></button></div>
       </form></div>}
 
-      {detailOpen && <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setDetailOpen(false)}><aside className="detail-drawer"><div className="modal-head"><div><p className="eyebrow">الأربعاء، 6 آب 2026</p><h2>تفاصيل يوم العمل</h2></div><button className="close-button" onClick={() => setDetailOpen(false)}>×</button></div><StatusPill tone="returned">أُعيد للمراجعة</StatusPill><div className="review-note"><span>!</span><p><b>ملاحظة رئيس الأطباء</b>يرجى إرفاق صورة إثبات الاستشارية الخامسة ثم إعادة الإرسال.</p></div><div className="detail-lines"><div><span>5 استشاريات</span><b>{money(50000)}</b></div><div><span>ولادة طبيعية · زينب علي</span><b>{money(80000)}</b></div><div><span>رقود مدفوع · حالتان</span><b>{money(50000)}</b></div><div className="subtotal"><span>المبلغ الأولي</span><b>{money(180000)}</b></div><div className="discount-line"><span>خصم التدقيق</span><b>− {money(55000)}</b></div><div className="total"><span>المبلغ الحالي</span><strong>{money(125000)}</strong></div></div><button className="upload-box drawer-upload" onClick={() => notify("تمت إضافة صورة الإثبات بنجاح")}><span>▧</span><b>إضافة الإثبات الناقص</b><small>ثم إعادة إرسال اليوم للتدقيق</small></button><button className="primary-action full" onClick={() => { setDetailOpen(false); notify("أُعيد إرسال اليوم بعد استكمال الإثبات"); }}>إعادة الإرسال للتدقيق</button></aside></div>}
+      {detailOpen && <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setDetailOpen(false)}><aside className="detail-drawer"><div className="modal-head"><div><p className="eyebrow">الأربعاء، 6 آب 2026</p><h2>تفاصيل يوم العمل</h2></div><button className="close-button" onClick={() => setDetailOpen(false)}>×</button></div><StatusPill tone="returned">أُعيد للمراجعة</StatusPill><div className="review-note"><span>!</span><p><b>ملاحظة رئيس الأطباء</b>يرجى إرفاق صورة إثبات الاستشارية الخامسة ثم حفظ التعديل.</p></div><div className="detail-lines"><div><span>5 استشاريات</span><b>{money(50000)}</b></div><div><span>ولادة طبيعية · زينب علي</span><b>{money(80000)}</b></div><div><span>رقود مدفوع · حالتان</span><b>{money(50000)}</b></div><div className="subtotal"><span>المبلغ الأولي</span><b>{money(180000)}</b></div><div className="discount-line"><span>خصم التدقيق</span><b>− {money(55000)}</b></div><div className="total"><span>المبلغ الحالي</span><strong>{money(125000)}</strong></div></div><button className="upload-box drawer-upload" onClick={() => notify("تمت إضافة صورة الإثبات بنجاح")}><span>▧</span><b>إضافة الإثبات الناقص</b><small>ثم حفظ اليوم ليظهر للتدقيق</small></button><button className="primary-action full" onClick={() => { setDetailOpen(false); notify("حُفظ اليوم بعد استكمال الإثبات وظهر للتدقيق"); }}>حفظ التعديل</button></aside></div>}
       {toast && <div className={`toast ${toast.kind}`}><span>{toast.kind === "success" ? "✓" : "i"}</span>{toast.message}</div>}
     </div>
   );
