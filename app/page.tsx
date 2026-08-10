@@ -4,12 +4,14 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { buildNewbornNames, calculateDailyCompensation, getInitialPrice } from "../lib/rules-engine";
 
 type Role = "doctor" | "chief" | "accounts" | "admin";
-type View = "overview" | "days" | "audit" | "payments" | "reports" | "settings" | "registry" | "personalSalary";
+type View = "overview" | "handover" | "days" | "audit" | "payments" | "reports" | "settings" | "registry" | "personalSalary";
 type Toast = { message: string; kind: "success" | "info" } | null;
-type PatientRecord = { id: number; fullName: string; fileNumber: string; department: string; admissionDate: string; paymentCategory: string; entryType: string; patientStatus: string; billingMode: string; newbornCount?: number };
+type PatientRecord = { id: number; fullName: string; fileNumber: string; department: string; admissionDate: string; paymentCategory: string; entryType: string; patientStatus: string; billingMode: string; attendingDoctor?: string | null; isNewborn?: boolean; newbornCount?: number };
 type EmployeeRecord = { id: number; fullName: string; employeeNumber: string; role: string; specialty: string; status: string };
+type HandoverPatient = { id: number; priority: string; clinicalSummary: string; pendingActions: string; receivedStatus: string; patient: PatientRecord };
+type HandoverRecord = { id: number; fromDoctorName: string; toDoctorName: string; status: string; notes?: string | null; shiftEndedAt: string; acceptedAt?: string | null; patients: HandoverPatient[] };
 
-const IQD = new Intl.NumberFormat("ar-IQ");
+const IQD = new Intl.NumberFormat("en-US");
 const money = (value: number) => `${IQD.format(value)} د.ع`;
 
 const recentDays = [
@@ -60,6 +62,7 @@ function StatusPill({ tone, children }: { tone: string; children: React.ReactNod
 export default function Home() {
   const [role, setRole] = useState<Role>("doctor");
   const [view, setView] = useState<View>("overview");
+  const [sidebarExpanded, setSidebarExpanded] = useState(false);
   const [auditRows, setAuditRows] = useState(auditSeed);
   const [payments, setPayments] = useState(paymentSeed);
   const [addOpen, setAddOpen] = useState(false);
@@ -81,6 +84,13 @@ export default function Home() {
   const [patientEntryType, setPatientEntryType] = useState("استشارية");
   const [newbornCount, setNewbornCount] = useState(0);
   const [patientInitialPrice, setPatientInitialPrice] = useState(getInitialPrice("استشارية"));
+  const [handoverLoading, setHandoverLoading] = useState(true);
+  const [handoverSaving, setHandoverSaving] = useState(false);
+  const [handover, setHandover] = useState<HandoverRecord | null>(null);
+  const [handoverCandidates, setHandoverCandidates] = useState<PatientRecord[]>([]);
+  const [selectedPatientIds, setSelectedPatientIds] = useState<number[]>([]);
+  const [handoverFromDoctor, setHandoverFromDoctor] = useState("د. سارة محمود");
+  const [handoverToDoctor, setHandoverToDoctor] = useState("د. أحمد البياتي");
 
   const currentRole = roles.find((item) => item.id === role)!;
   const dailyCalculation = calculateDailyCompensation({ consultations, births, cesareans, paidInpatients: inpatients, maxConsultations: 10, combinedCap: 200000 });
@@ -91,11 +101,13 @@ export default function Home() {
   const navItems = useMemo(() => {
     if (role === "doctor") return [
       { id: "overview" as View, label: "الرئيسية", icon: "⌂" },
+      { id: "handover" as View, label: "استلام المناوبة", icon: "⇄" },
       { id: "days" as View, label: "أيام العمل", icon: "▣" },
       { id: "reports" as View, label: "كشف الحساب", icon: "≋" },
     ];
     if (role === "chief") return [
       { id: "overview" as View, label: "الرئيسية", icon: "⌂" },
+      { id: "handover" as View, label: "تسليم المناوبات", icon: "⇄" },
       { id: "personalSalary" as View, label: "راتبي الشخصي", icon: "◇" },
       { id: "audit" as View, label: "التدقيق والاعتماد", icon: "✓" },
       { id: "settings" as View, label: "سقوف الأطباء", icon: "⌁" },
@@ -135,9 +147,33 @@ export default function Home() {
     return () => { active = false; };
   }, [view]);
 
+  useEffect(() => {
+    if (view !== "handover") return;
+    let active = true;
+    fetch("/api/handover")
+      .then(async (response) => {
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "تعذر تحميل تسليم المناوبة");
+        if (active) {
+          setHandover(data.handover ?? null);
+          setHandoverCandidates(data.candidates ?? []);
+          setSelectedPatientIds((data.candidates ?? []).map((patient: PatientRecord) => patient.id));
+        }
+      })
+      .catch(() => active && notify("تعذر تحميل المناوبة الآن، حاول مرة أخرى", "info"))
+      .finally(() => active && setHandoverLoading(false));
+    return () => { active = false; };
+  }, [view]);
+
   function changeRole(nextRole: Role) {
     setRole(nextRole);
     setView("overview");
+    setSidebarExpanded(false);
+  }
+
+  function navigateTo(nextView: View) {
+    setView(nextView);
+    setSidebarExpanded(false);
   }
 
   function notify(message: string, kind: "success" | "info" = "success") {
@@ -213,6 +249,63 @@ export default function Home() {
       notify(data.message);
     } catch (error) {
       notify(error instanceof Error ? error.message : "تعذر تحديث مسار المريضة", "info");
+    }
+  }
+
+  function applyHandoverData(data: { handover?: HandoverRecord | null; candidates?: PatientRecord[] }) {
+    setHandover(data.handover ?? null);
+    setHandoverCandidates(data.candidates ?? []);
+    setSelectedPatientIds((current) => current.filter((id) => (data.candidates ?? []).some((patient) => patient.id === id)));
+  }
+
+  function toggleHandoverPatient(patientId: number) {
+    setSelectedPatientIds((ids) => ids.includes(patientId) ? ids.filter((id) => id !== patientId) : [...ids, patientId]);
+  }
+
+  async function createHandover(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    setHandoverSaving(true);
+    try {
+      const response = await fetch("/api/handover", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "create",
+          fromDoctor: handoverFromDoctor,
+          toDoctor: handoverToDoctor,
+          patientIds: selectedPatientIds,
+          notes: formData.get("notes"),
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "تعذر إنشاء تسليم المناوبة");
+      applyHandoverData(data);
+      notify(`أُرسلت متابعة ${selectedPatientIds.length} مريضًا إلى ${handoverToDoctor}`);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "تعذر إنشاء تسليم المناوبة", "info");
+    } finally {
+      setHandoverSaving(false);
+    }
+  }
+
+  async function acceptHandover() {
+    if (!handover) return;
+    setHandoverSaving(true);
+    try {
+      const response = await fetch("/api/handover", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "accept", handoverId: handover.id }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "تعذر تأكيد استلام المناوبة");
+      applyHandoverData(data);
+      notify("تم استلام المرضى وانتقلت مسؤولية المتابعة إلى الطبيب الجديد");
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "تعذر تأكيد استلام المناوبة", "info");
+    } finally {
+      setHandoverSaving(false);
     }
   }
 
@@ -515,6 +608,70 @@ export default function Home() {
     );
   }
 
+  function renderHandover() {
+    const doctorOptions = ["د. أحمد البياتي", "د. سارة محمود", "د. مريم حسن", "د. يوسف كريم"];
+    const receivedPatients = handover?.patients ?? [];
+    const handoverTime = handover?.shiftEndedAt
+      ? new Date(handover.shiftEndedAt).toLocaleString("ar-IQ-u-nu-latn", { dateStyle: "medium", timeStyle: "short" })
+      : "—";
+
+    return <>
+      <section className="page-title handover-title"><div><p className="eyebrow">استمرارية الرعاية</p><h1>تسليم واستلام المناوبة</h1><p>لا يبدأ الطبيب الجديد من الصفر؛ تظهر له الحالات المسلّمة وما يحتاج إلى متابعة فورًا.</p></div><StatusPill tone={handover?.status === "تم الاستلام" ? "approved" : "pending"}>{handover?.status || "لا يوجد تسليم حالي"}</StatusPill></section>
+
+      <section className="handover-steps" aria-label="خطوات تسليم المناوبة">
+        <article><span>1</span><div><b>إنهاء دوام الطبيب الأول</b><small>يحدد المرضى الموجودين تحت متابعته.</small></div></article>
+        <i>←</i>
+        <article><span>2</span><div><b>نقل المعلومات والمتابعات</b><small>يحفظ النظام الحالة والأولوية والإجراء التالي.</small></div></article>
+        <i>←</i>
+        <article><span>3</span><div><b>تأكيد الطبيب المستلم</b><small>تنتقل مسؤولية المتابعة إليه مع سجل زمني.</small></div></article>
+      </section>
+
+      <section className="handover-layout">
+        <article className="panel received-handover">
+          <div className="panel-head"><div><h2>المناوبة الواردة</h2><p>آخر تسليم محفوظ في النظام</p></div><span className="records-count">{receivedPatients.length} مرضى</span></div>
+          {handoverLoading ? <div className="registry-empty"><span className="loading-ring" /><p>جارٍ تحميل المناوبة...</p></div> : !handover ? <div className="handover-empty"><span>⇄</span><div><b>لا يوجد تسليم بانتظارك</b><small>عند إنهاء الطبيب السابق لمناوبته ستظهر الحالات هنا مباشرة.</small></div></div> : <>
+            <div className="handover-route">
+              <div><small>الطبيب المسلّم</small><strong>{handover.fromDoctorName}</strong></div>
+              <span>←</span>
+              <div><small>الطبيب المستلم</small><strong>{handover.toDoctorName}</strong></div>
+              <time>{handoverTime}</time>
+            </div>
+            {handover.notes && <div className="handover-note"><span>!</span><p><b>ملاحظة المناوبة</b>{handover.notes}</p></div>}
+            <div className="handover-patient-list">
+              {receivedPatients.map((item) => <div className="handover-patient" key={item.id}>
+                <span className="record-avatar">{item.patient.fullName[0]}</span>
+                <div><b>{item.patient.fullName}</b><small>{item.patient.fileNumber} · {item.clinicalSummary}</small><p>{item.pendingActions}</p></div>
+                <span className={`priority ${item.priority === "مرتفع" ? "high" : "normal"}`}>{item.priority}</span>
+                <StatusPill tone={item.receivedStatus === "مستلم" ? "approved" : "pending"}>{item.receivedStatus}</StatusPill>
+              </div>)}
+            </div>
+            <button className="primary-action full" disabled={handoverSaving || handover.status === "تم الاستلام"} onClick={acceptHandover}>{handover.status === "تم الاستلام" ? "✓ تم استلام جميع المرضى" : handoverSaving ? "جارٍ تأكيد الاستلام..." : "تأكيد استلام المرضى وبدء المتابعة"}</button>
+          </>}
+        </article>
+
+        <form className="panel outgoing-handover" onSubmit={createHandover}>
+          <div className="panel-head"><div><h2>إنهاء المناوبة وتسليم المرضى</h2><p>أنشئ قائمة واضحة للطبيب الذي يأتي بعدك</p></div><span className="ai-tag">حفظ تلقائي</span></div>
+          <div className="handover-doctors">
+            <label className="form-field"><span>الطبيب المسلّم</span><select value={handoverFromDoctor} onChange={(event) => setHandoverFromDoctor(event.target.value)}>{doctorOptions.map((doctor) => <option key={doctor}>{doctor}</option>)}</select></label>
+            <span>←</span>
+            <label className="form-field"><span>الطبيب المستلم</span><select value={handoverToDoctor} onChange={(event) => setHandoverToDoctor(event.target.value)}>{doctorOptions.map((doctor) => <option key={doctor}>{doctor}</option>)}</select></label>
+          </div>
+          <div className="candidate-heading"><div><b>المرضى الموجودون حاليًا</b><small>حدد من تنتقل مسؤولية متابعته إلى الطبيب التالي</small></div><button type="button" onClick={() => setSelectedPatientIds(selectedPatientIds.length === handoverCandidates.length ? [] : handoverCandidates.map((patient) => patient.id))}>{selectedPatientIds.length === handoverCandidates.length && handoverCandidates.length > 0 ? "إلغاء الكل" : "تحديد الكل"}</button></div>
+          <div className="handover-candidates">
+            {handoverCandidates.length === 0 ? <div className="registry-empty"><span>✓</span><p><b>لا يوجد مرضى نشطون</b><small>ستظهر هنا الحالات المسجلة وغير الخارجة.</small></p></div> : handoverCandidates.map((patient) => <label className={selectedPatientIds.includes(patient.id) ? "selected" : ""} key={patient.id}>
+              <input type="checkbox" checked={selectedPatientIds.includes(patient.id)} onChange={() => toggleHandoverPatient(patient.id)} />
+              <span className="record-avatar">{patient.fullName[0]}</span>
+              <p><b>{patient.fullName}</b><small>{patient.fileNumber} · {patient.entryType} · {patient.department}</small></p>
+              <StatusPill tone={patient.entryType === "رقود" ? "returned" : "pending"}>{patient.entryType}</StatusPill>
+            </label>)}
+          </div>
+          <label className="form-field handover-notes"><span>ملاحظة عامة للطبيب المستلم</span><textarea name="notes" rows={3} placeholder="مثال: مراجعة نتائج الفحوصات للحالات ذات الأولوية قبل الساعة 10:00" /></label>
+          <div className="registry-submit"><p><span>✓</span><small>لن تتغير مسؤولية الطبيب إلا بعد تأكيد الاستلام.</small></p><button className="primary-action" disabled={handoverSaving || selectedPatientIds.length === 0}>{handoverSaving ? "جارٍ التسليم..." : `تسليم ${selectedPatientIds.length} مريضًا`}<span>←</span></button></div>
+        </form>
+      </section>
+    </>;
+  }
+
   function renderSettings() {
     const doctors = [
       ["د. أحمد البياتي", "10", "200,000"], ["د. سارة محمود", "12", "250,000"], ["د. مريم حسن", "10", "200,000"], ["د. يوسف كريم", "8", "180,000"],
@@ -534,6 +691,7 @@ export default function Home() {
     if (view === "audit") return renderAudit();
     if (view === "payments") return renderPayments();
     if (view === "registry") return renderRegistry();
+    if (view === "handover") return renderHandover();
     if (view === "personalSalary") return renderPersonalSalary();
     if (view === "settings") return renderSettings();
     if (view === "reports") return renderReports();
@@ -545,24 +703,26 @@ export default function Home() {
   }
 
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
+    <div className={`app-shell ${sidebarExpanded ? "sidebar-open" : "sidebar-collapsed"}`}>
+      <aside className="sidebar" aria-label="القائمة الجانبية">
         <div className="brand"><span>ب</span><div><b>البياتي</b><small>النظام الطبي الذكي</small></div></div>
+        <button className="sidebar-toggle" type="button" aria-expanded={sidebarExpanded} aria-label={sidebarExpanded ? "طي القائمة الجانبية" : "إظهار القائمة الجانبية"} onClick={() => setSidebarExpanded((expanded) => !expanded)}><Icon>{sidebarExpanded ? "→" : "☰"}</Icon><span>{sidebarExpanded ? "طي القائمة" : "إظهار القائمة"}</span></button>
         <nav aria-label="القائمة الرئيسية">
           <p>القائمة الرئيسية</p>
-          {navItems.map((item) => <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => setView(item.id)}><Icon>{item.icon}</Icon><span>{item.label}</span>{item.id === "audit" && auditRows.length > 0 && <i className="nav-count">{auditRows.length}</i>}</button>)}
+          {navItems.map((item) => <button key={item.id} title={!sidebarExpanded ? item.label : undefined} className={view === item.id ? "active" : ""} onClick={() => navigateTo(item.id)}><Icon>{item.icon}</Icon><span>{item.label}</span>{item.id === "audit" && auditRows.length > 0 && <i className="nav-count">{auditRows.length}</i>}</button>)}
         </nav>
-        <div className="sidebar-bottom"><button onClick={() => setView("settings")}><Icon>؟</Icon><span>مركز المساعدة</span></button><div className="secure-chip"><span>✓</span><p><b>بياناتك محمية</b><small>آخر مزامنة: الآن</small></p></div></div>
+        <div className="sidebar-bottom"><button title={!sidebarExpanded ? "مركز المساعدة" : undefined} onClick={() => navigateTo("settings")}><Icon>؟</Icon><span>مركز المساعدة</span></button><div className="secure-chip"><span>✓</span><p><b>بياناتك محمية</b><small>آخر مزامنة: الآن</small></p></div></div>
       </aside>
+      {sidebarExpanded && <button type="button" className="sidebar-scrim" aria-label="إغلاق القائمة" onClick={() => setSidebarExpanded(false)} />}
 
       <div className="main-column">
         <header className="topbar">
-          <div className="mobile-brand"><span>ب</span><b>البياتي</b></div>
+          <div className="mobile-brand"><button type="button" className="menu-trigger" aria-label="إظهار القائمة الجانبية" onClick={() => setSidebarExpanded(true)}>☰</button><span>ب</span><b>البياتي</b></div>
           <label className="global-search"><span>⌕</span><input aria-label="البحث في النظام" placeholder="ابحث عن مريض، طبيب أو يوم عمل..." /></label>
           <div className="top-actions"><button className="icon-button" aria-label="الإشعارات"><span>♢</span><i /></button><span className="divider" /><div className="role-picker"><span className="user-avatar">{currentRole.name.split(" ")[1]?.[0] || "ب"}</span><div><b>{currentRole.name}</b><small>{currentRole.label}</small></div><select aria-label="تبديل الدور للمعاينة" value={role} onChange={(event) => changeRole(event.target.value as Role)}>{roles.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></div></div>
         </header>
         <main>{renderContent()}</main>
-        <nav className="mobile-nav" aria-label="قائمة الهاتف">{navItems.slice(0, 4).map((item) => <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => setView(item.id)}><Icon>{item.icon}</Icon><small>{item.label.split(" ")[0]}</small></button>)}</nav>
+        <nav className="mobile-nav" aria-label="قائمة الهاتف">{navItems.slice(0, 4).map((item) => <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => navigateTo(item.id)}><Icon>{item.icon}</Icon><small>{item.label.split(" ")[0]}</small></button>)}</nav>
       </div>
 
       {addOpen && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setAddOpen(false)}><form className="entry-modal" onSubmit={submitDay}>

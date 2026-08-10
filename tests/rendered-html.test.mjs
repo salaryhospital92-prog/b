@@ -27,16 +27,21 @@ test("server-renders the Arabic hospital dashboard", async () => {
 });
 
 test("keeps Supabase credentials server-side and covers responsive screens", async () => {
-  const [api, serverClient, css, migration, exampleEnv] = await Promise.all([
+  const [api, handoverApi, page, serverClient, css, migration, handoverMigration, exampleEnv] = await Promise.all([
     readFile(new URL("../app/api/registry/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/handover/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../lib/supabase-server.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
     readFile(new URL("../supabase/migrations/202608110001_initial_hospital_schema.sql", import.meta.url), "utf8"),
+    readFile(new URL("../supabase/migrations/202608110002_shift_handovers.sql", import.meta.url), "utf8"),
     readFile(new URL("../.env.example", import.meta.url), "utf8"),
   ]);
 
   assert.match(api, /getSupabaseAdmin/);
   assert.match(api, /register_patient/);
+  assert.match(handoverApi, /create_shift_handover/);
+  assert.match(handoverApi, /accept_shift_handover/);
   assert.match(serverClient, /SUPABASE_SERVICE_ROLE_KEY/);
   assert.doesNotMatch(api, /NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY/);
   assert.doesNotMatch(exampleEnv, /eyJ|sb_secret_|service_role\.[A-Za-z0-9]/);
@@ -44,9 +49,16 @@ test("keeps Supabase credentials server-side and covers responsive screens", asy
   assert.match(css, /@media \(max-width: 900px\)/);
   assert.match(css, /@media \(max-width: 380px\)/);
   assert.match(css, /min-width:\s*320px/);
+  assert.match(css, /sidebar-collapsed/);
+  assert.match(css, /handover-layout/);
+  assert.match(page, /Intl\.NumberFormat\("en-US"\)/);
+  assert.match(page, /استلام المناوبة/);
 
   for (const table of ["employees", "patients", "patient_events", "procedures", "doctor_calls", "call_details", "inpatient_payments", "doctor_caps", "audit_logs"]) {
     assert.match(migration, new RegExp(`create table if not exists public\\.${table}`));
   }
   assert.match(migration, /enable row level security/);
+  assert.match(handoverMigration, /create table if not exists public\.doctor_shift_handovers/);
+  assert.match(handoverMigration, /create table if not exists public\.handover_patients/);
+  assert.match(handoverMigration, /attending_doctor = handover_record\.to_doctor_name/);
 });
