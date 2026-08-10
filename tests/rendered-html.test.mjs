@@ -92,3 +92,20 @@ test("ships installable PWA icon metadata", async () => {
   assert.match(layout, /appleWebApp/);
   assert.match(layout, /themeColor:\s*"#113b39"/);
 });
+
+test("prepares Netlify without allowing an automatic release", async () => {
+  const [config, gate, packageJson, setup] = await Promise.all([
+    readFile(new URL("../netlify.toml", import.meta.url), "utf8"),
+    readFile(new URL("../scripts/netlify-build-gate.mjs", import.meta.url), "utf8"),
+    readFile(new URL("../package.json", import.meta.url), "utf8"),
+    readFile(new URL("../NETLIFY_SETUP.md", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(config, /command = "npm run build:netlify"/);
+  assert.match(config, /publish = "\.next"/);
+  assert.match(config, /ignore = "node \.\/scripts\/netlify-build-gate\.mjs"/);
+  assert.match(gate, /NETLIFY_RELEASE_APPROVED === "true"/);
+  assert.match(packageJson, /"next": "16\.3\.0"/);
+  assert.match(setup, /SUPABASE_SERVICE_ROLE_KEY/);
+  assert.doesNotMatch(`${config}\n${gate}\n${packageJson}\n${setup}`, /nfp_[A-Za-z0-9]+/);
+});

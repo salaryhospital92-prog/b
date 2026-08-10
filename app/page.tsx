@@ -93,7 +93,7 @@ export default function Home() {
   const [patientName, setPatientName] = useState("");
   const [patientEntryType, setPatientEntryType] = useState("استشارية");
   const [newbornCount, setNewbornCount] = useState(0);
-  const [patientInitialPrice, setPatientInitialPrice] = useState(getInitialPrice("استشارية"));
+  const [patientInitialPrice, setPatientInitialPrice] = useState<number>(getInitialPrice("استشارية"));
   const [handoverLoading, setHandoverLoading] = useState(true);
   const [handoverSaving, setHandoverSaving] = useState(false);
   const [handover, setHandover] = useState<HandoverRecord | null>(null);
