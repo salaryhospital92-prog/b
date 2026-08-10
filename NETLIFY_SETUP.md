@@ -8,6 +8,8 @@
 - مجلد النشر: `.next`
 - إصدار Node.js: `22.13.0`
 - التشغيل المحلي عبر Netlify: `npm run dev:netlify`
+- التشغيل المحلي المعتاد: `npm run dev` على `http://localhost:3000`.
+- تشغيل بيئة Sites القديمة عند الحاجة: `npm run dev:sites`.
 - منع البناء التلقائي: مفعّل ما لم تكن قيمة `NETLIFY_RELEASE_APPROVED` مساوية لـ `true`.
 
 ## متغيرات التشغيل المطلوبة على Netlify
