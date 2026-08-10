@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
 import "./globals.css";
 
@@ -10,7 +10,21 @@ export async function generateMetadata(): Promise<Metadata> {
 
   return {
     title: "نظام البياتي الطبي الذكي",
+    applicationName: "نظام البياتي الطبي الذكي",
     description: "منصة ذكية لإدارة عمل وحسابات الأطباء المقيمين بدقة وشفافية.",
+    manifest: "/manifest.webmanifest",
+    icons: {
+      icon: [
+        { url: "/icons/favicon-32.png", sizes: "32x32", type: "image/png" },
+        { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
+      ],
+      apple: [{ url: "/icons/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
+    },
+    appleWebApp: {
+      capable: true,
+      title: "البياتي",
+      statusBarStyle: "black-translucent",
+    },
     openGraph: {
       title: "نظام البياتي الطبي الذكي",
       description: "تسجيل أدق. عمل أسهل.",
@@ -26,6 +40,11 @@ export async function generateMetadata(): Promise<Metadata> {
     },
   };
 }
+
+export const viewport: Viewport = {
+  themeColor: "#113b39",
+  colorScheme: "light",
+};
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (

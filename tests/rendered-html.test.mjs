@@ -24,6 +24,8 @@ test("server-renders the Arabic hospital dashboard", async () => {
   assert.match(html, /نظام البياتي الطبي الذكي/);
   assert.match(html, /لوحة|الرئيسية/);
   assert.match(html, /class="mobile-nav"/);
+  assert.match(html, /manifest\.webmanifest/);
+  assert.match(html, /apple-touch-icon\.png/);
 });
 
 test("keeps Supabase credentials server-side and covers responsive screens", async () => {
@@ -61,4 +63,17 @@ test("keeps Supabase credentials server-side and covers responsive screens", asy
   assert.match(handoverMigration, /create table if not exists public\.doctor_shift_handovers/);
   assert.match(handoverMigration, /create table if not exists public\.handover_patients/);
   assert.match(handoverMigration, /attending_doctor = handover_record\.to_doctor_name/);
+});
+
+test("ships installable PWA icon metadata", async () => {
+  const [manifest, layout] = await Promise.all([
+    readFile(new URL("../app/manifest.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(manifest, /display:\s*"standalone"/);
+  assert.match(manifest, /icon-maskable-512\.png/);
+  assert.match(manifest, /theme_color:\s*"#113b39"/);
+  assert.match(layout, /appleWebApp/);
+  assert.match(layout, /themeColor:\s*"#113b39"/);
 });
