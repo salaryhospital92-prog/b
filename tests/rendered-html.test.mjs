@@ -255,6 +255,9 @@ test("prepares Netlify without allowing an automatic release", async () => {
   assert.match(config, /command = "npm run build:netlify"/);
   assert.match(config, /publish = "\.next"/);
   assert.match(config, /ignore = "node \.\/scripts\/netlify-build-gate\.mjs"/);
+  // Without the declared runtime a repo build publishes .next with no server
+  // handler, and every route 404s. Auto-detection did not cover this project.
+  assert.match(config, /\[\[plugins\]\][\s\S]*package = "@netlify\/plugin-nextjs"/);
   assert.match(gate, /NETLIFY_RELEASE_APPROVED === "true"/);
   assert.match(packageJson, /"next": "16\.3\.0"/);
   assert.match(setup, /SUPABASE_SERVICE_ROLE_KEY/);

@@ -3,6 +3,12 @@
   publish = ".next"
   ignore = "node ./scripts/netlify-build-gate.mjs"
 
+# Declared, not left to auto-detection: without it a repo-triggered build ships
+# the raw .next directory with no server handler and every route answers 404.
+# It only ran locally before because .netlify/plugins is not committed.
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+
 [build.environment]
   NODE_VERSION = "22.13.0"
   NEXT_TELEMETRY_DISABLED = "1"
