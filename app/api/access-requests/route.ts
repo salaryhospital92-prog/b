@@ -62,7 +62,7 @@ export async function POST(request: Request) {
 
 export async function GET() {
   if (!demoReviewEnabled()) {
-    return Response.json({ error: "مراجعة الطلبات متاحة لمدير النظام فقط" }, { status: 403 });
+    return Response.json({ error: "مراجعة الطلبات متاحة لرئيس المقيمين فقط" }, { status: 403 });
   }
   try {
     const { data, error } = await getSupabaseAdmin().from("system_access_requests")
@@ -76,19 +76,24 @@ export async function GET() {
 
 export async function PATCH(request: Request) {
   if (!demoReviewEnabled()) {
-    return Response.json({ error: "مراجعة الطلبات متاحة لمدير النظام فقط" }, { status: 403 });
+    return Response.json({ error: "مراجعة الطلبات متاحة لرئيس المقيمين فقط" }, { status: 403 });
   }
   try {
     const payload = await request.json() as Record<string, unknown>;
     const id = Number(payload.id);
     const decision = clean(payload.decision);
+    const reviewerName = clean(payload.reviewerName);
     if (!Number.isInteger(id) || id <= 0 || !["مقبول", "مرفوض"].includes(decision)) {
       return Response.json({ error: "قرار الموافقة غير صحيح" }, { status: 400 });
     }
 
     const supabase = getSupabaseAdmin();
+    const { data: reviewer, error: reviewerError } = await supabase.from("employees")
+      .select("id").eq("full_name", reviewerName).eq("role", "رئيس المقيمين").eq("status", "نشط").maybeSingle();
+    if (reviewerError) throw reviewerError;
+    if (!reviewer) return Response.json({ error: "الموافقة على الحسابات من صلاحية رئيس المقيمين فقط" }, { status: 403 });
     const { data: accessRequest, error: requestError } = await supabase.from("system_access_requests")
-      .update({ status: decision, review_note: clean(payload.reviewNote) || null, reviewed_at: new Date().toISOString() })
+      .update({ status: decision, reviewed_by: reviewer.id, review_note: clean(payload.reviewNote) || null, reviewed_at: new Date().toISOString() })
       .eq("id", id).select("*").single();
     if (requestError) throw requestError;
 

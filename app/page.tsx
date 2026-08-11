@@ -1,11 +1,12 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { buildNewbornNames, calculateDailyCompensation, getInitialPrice } from "../lib/rules-engine";
+import { buildNewbornNames, getInitialPrice } from "../lib/rules-engine";
 import { getSupabaseBrowser } from "../lib/supabase-browser";
+import ResidentWorkflow from "./resident-workflow";
 
-type Role = "doctor" | "chief" | "accounts" | "admin";
-type View = "overview" | "handover" | "days" | "audit" | "payments" | "reports" | "settings" | "registry" | "personalSalary" | "capabilities" | "accessRequests";
+type Role = "doctor" | "chief" | "accounts" | "admin" | "developer";
+type View = "overview" | "handover" | "days" | "workLogs" | "objections" | "audit" | "payments" | "reports" | "settings" | "registry" | "personalSalary" | "capabilities" | "accessRequests";
 type Toast = { message: string; kind: "success" | "info" } | null;
 type PatientRecord = { id: number; fullName: string; fileNumber: string; department: string; admissionDate: string; paymentCategory: string; entryType: string; patientStatus: string; billingMode: string; attendingDoctor?: string | null; isNewborn?: boolean; newbornCount?: number };
 type EmployeeRecord = { id: number; fullName: string; employeeNumber: string; role: string; specialty: string; status: string };
@@ -45,11 +46,16 @@ const paymentSeed = [
   { id: 4, patient: "رنا كامل", file: "P-1032", admission: "5 آب", days: ["pending", "pending", "pending", "none", "none"] },
 ];
 
-const roles: { id: Role; label: string; name: string }[] = [
-  { id: "doctor", label: "الطبيب المقيم", name: "د. أحمد البياتي" },
-  { id: "chief", label: "رئيس الأطباء", name: "د. ليلى قاسم" },
-  { id: "accounts", label: "قسم الحسابات", name: "سلمى نزار" },
-  { id: "admin", label: "الإدارة العليا", name: "أ. عمر عدنان" },
+const demoAccounts: { id: string; role: Role; label: string; name: string }[] = [
+  { id: "doctor-ahmed", role: "doctor", label: "طبيب مقيم", name: "د. أحمد البياتي" },
+  { id: "doctor-fanar", role: "doctor", label: "طبيب مقيم", name: "د. فنار" },
+  { id: "doctor-tabarak", role: "doctor", label: "طبيب مقيم", name: "د. تبارك" },
+  { id: "doctor-shahd", role: "doctor", label: "طبيب مقيم", name: "د. شهد" },
+  { id: "accounts-salma", role: "accounts", label: "الحسابات", name: "سلمى نزار" },
+  { id: "accounts-zahraa", role: "accounts", label: "الحسابات", name: "زهراء علي" },
+  { id: "chief-layla", role: "chief", label: "رئيس المقيمين", name: "د. ليلى قاسم" },
+  { id: "admin-head", role: "admin", label: "الإدارة العليا · رئاسة القسم", name: "رئاسة القسم" },
+  { id: "developer-system", role: "developer", label: "مطور النظام", name: "مطور النظام" },
 ];
 
 function Icon({ children }: { children: string }) {
@@ -70,18 +76,12 @@ function StatusPill({ tone, children }: { tone: string; children: React.ReactNod
 }
 
 export default function Home() {
-  const [role, setRole] = useState<Role>("doctor");
+  const [activeAccountId, setActiveAccountId] = useState("doctor-ahmed");
   const [view, setView] = useState<View>("overview");
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
   const [auditRows, setAuditRows] = useState(auditSeed);
   const [payments, setPayments] = useState(paymentSeed);
-  const [addOpen, setAddOpen] = useState(false);
-  const [detailOpen, setDetailOpen] = useState(false);
   const [toast, setToast] = useState<Toast>(null);
-  const [consultations, setConsultations] = useState(8);
-  const [births, setBirths] = useState(1);
-  const [cesareans, setCesareans] = useState(0);
-  const [inpatients, setInpatients] = useState(3);
   const [auditFilter, setAuditFilter] = useState("الكل");
   const [search, setSearch] = useState("");
   const [registryTab, setRegistryTab] = useState<"patient" | "employee">("patient");
@@ -110,25 +110,28 @@ export default function Home() {
   const [accessRequests, setAccessRequests] = useState<AccessRequestRecord[]>([]);
   const [accessLoading, setAccessLoading] = useState(true);
 
-  const currentRole = roles.find((item) => item.id === role)!;
-  const dailyCalculation = calculateDailyCompensation({ consultations, births, cesareans, paidInpatients: inpatients, maxConsultations: 10, combinedCap: 200000 });
-  const capDiscount = dailyCalculation.capDiscount;
-  const estimatedTotal = dailyCalculation.approvedTotal;
+  const currentRole = demoAccounts.find((item) => item.id === activeAccountId) || demoAccounts[0];
+  const role = currentRole.role;
   const newbornNames = buildNewbornNames(patientName, newbornCount);
 
   const navItems = useMemo(() => {
     if (role === "doctor") return [
       { id: "overview" as View, label: "الرئيسية", icon: "⌂" },
       { id: "handover" as View, label: "استلام المناوبة", icon: "⇄" },
-      { id: "days" as View, label: "أيام العمل", icon: "▣" },
+      { id: "registry" as View, label: "تسجيل مريض", icon: "＋" },
+      { id: "workLogs" as View, label: "سجل المناوبات", icon: "▣" },
+      { id: "objections" as View, label: "اعتراضاتي", icon: "!" },
       { id: "reports" as View, label: "كشف الحساب", icon: "≋" },
       { id: "capabilities" as View, label: "دليل مهامي", icon: "◎" },
     ];
     if (role === "chief") return [
       { id: "overview" as View, label: "الرئيسية", icon: "⌂" },
       { id: "handover" as View, label: "تسليم المناوبات", icon: "⇄" },
+      { id: "workLogs" as View, label: "سجلات الأطباء", icon: "▣" },
+      { id: "objections" as View, label: "الاعتراضات", icon: "!" },
       { id: "personalSalary" as View, label: "راتبي الشخصي", icon: "◇" },
       { id: "audit" as View, label: "التدقيق والاعتماد", icon: "✓" },
+      { id: "accessRequests" as View, label: "إدارة الحسابات", icon: "♙" },
       { id: "settings" as View, label: "سقوف الأطباء", icon: "⌁" },
       { id: "reports" as View, label: "التقارير", icon: "≋" },
       { id: "capabilities" as View, label: "دليل الصلاحيات", icon: "◎" },
@@ -136,18 +139,26 @@ export default function Home() {
     if (role === "accounts") return [
       { id: "overview" as View, label: "الرئيسية", icon: "⌂" },
       { id: "registry" as View, label: "تسجيل مريض", icon: "＋" },
+      { id: "workLogs" as View, label: "سجلات المناوبات", icon: "▣" },
       { id: "payments" as View, label: "حالات الدفع", icon: "◫" },
       { id: "reports" as View, label: "المطابقات", icon: "≋" },
       { id: "capabilities" as View, label: "دليل المهام", icon: "◎" },
     ];
-    return [
+    if (role === "admin") return [
       { id: "overview" as View, label: "لوحة القيادة", icon: "⌂" },
       { id: "registry" as View, label: "مركز التسجيل", icon: "＋" },
+      { id: "workLogs" as View, label: "سجلات المناوبات", icon: "▣" },
       { id: "reports" as View, label: "التقارير الشاملة", icon: "≋" },
-      { id: "accessRequests" as View, label: "طلبات الحسابات", icon: "♙" },
       { id: "payments" as View, label: "البحث عن مريض", icon: "⌕" },
       { id: "settings" as View, label: "إدارة النظام", icon: "⌁" },
       { id: "capabilities" as View, label: "دليل الصلاحيات", icon: "◎" },
+    ];
+    return [
+      { id: "overview" as View, label: "حالة النظام", icon: "⌂" },
+      { id: "workLogs" as View, label: "سجل التعديلات", icon: "▣" },
+      { id: "reports" as View, label: "مراقبة التقارير", icon: "≋" },
+      { id: "settings" as View, label: "إعدادات النظام", icon: "⌁" },
+      { id: "capabilities" as View, label: "صلاحيات المطور", icon: "◎" },
     ];
   }, [role]);
 
@@ -208,7 +219,7 @@ export default function Home() {
   }, [view, reportPeriod, reportDate]);
 
   useEffect(() => {
-    if (view !== "accessRequests" || role !== "admin") return;
+    if (view !== "accessRequests" || role !== "chief") return;
     let active = true;
     fetch("/api/access-requests")
       .then(async (response) => {
@@ -236,13 +247,13 @@ export default function Home() {
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "تعذر تسجيل طلب الحساب");
       window.localStorage.removeItem("albayati-access-draft");
-      notify("تم تسجيل طلبك، وسيظهر لمدير النظام للموافقة", "success");
+      notify("تم تسجيل طلبك، وسيظهر لرئيس المقيمين للموافقة", "success");
     }).catch(() => undefined);
     return () => { active = false; };
   }, []);
 
-  function changeRole(nextRole: Role) {
-    setRole(nextRole);
+  function changeAccount(nextAccountId: string) {
+    setActiveAccountId(nextAccountId);
     setView("overview");
     setSidebarExpanded(false);
   }
@@ -306,7 +317,7 @@ export default function Home() {
       const response = await fetch("/api/access-requests", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, decision }),
+        body: JSON.stringify({ id, decision, reviewerName: currentRole.name }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "تعذر حفظ القرار");
@@ -329,12 +340,6 @@ export default function Home() {
       ? { ...row, days: row.days.map((status, index) => index === dayIndex ? cycle[status] : status) }
       : row));
     notify("تم تحديث حالة الدفع وإعادة احتساب حصة الرقود", "info");
-  }
-
-  function submitDay(event: FormEvent) {
-    event.preventDefault();
-    setAddOpen(false);
-    notify("حُفظ يوم العمل وظهر تلقائيًا بحالة تدشيك الراتب");
   }
 
   async function submitRegistry(event: FormEvent<HTMLFormElement>, kind: "patient" | "employee") {
@@ -454,7 +459,7 @@ export default function Home() {
             <h1>صباح الخير، د. أحمد</h1>
             <p className="muted">هذا ملخص عملك وحساباتك حتى الآن.</p>
           </div>
-          <button className="primary-action" onClick={() => setAddOpen(true)}><b>＋</b> تسجيل يوم عمل</button>
+          <button className="primary-action" onClick={() => navigateTo("workLogs")}><b>＋</b> تسجيل يوم عمل</button>
         </section>
 
         <section className="doctor-grid">
@@ -493,7 +498,7 @@ export default function Home() {
             </div>
             <div className="day-list">
               {recentDays.map((item) => (
-                <button className="day-row" key={item.id} onClick={() => setDetailOpen(true)}>
+                <button className="day-row" key={item.id} onClick={() => navigateTo("workLogs")}>
                   <span className="date-tile"><b>{item.date.split(" ")[0]}</b><small>آب</small></span>
                   <span className="day-copy"><b>{item.day}</b><small>{item.details}</small></span>
                   <StatusPill tone={item.tone}>{item.status}</StatusPill>
@@ -514,7 +519,7 @@ export default function Home() {
               <span>!</span>
               <p><b>تنبيه مهم</b> لديك يوم عمل أُعيد بسبب نقص صورة إثبات واحدة.</p>
             </div>
-            <button className="assistant-link" onClick={() => setDetailOpen(true)}>مراجعة اليوم الآن <span>←</span></button>
+            <button className="assistant-link" onClick={() => navigateTo("workLogs")}>مراجعة اليوم الآن <span>←</span></button>
           </aside>
         </section>
       </>
@@ -563,12 +568,12 @@ export default function Home() {
   function renderPersonalSalary() {
     return (
       <>
-        <section className="page-title"><div><p className="eyebrow">حساب رئيس الأطباء كطبيب</p><h1>راتبي الشخصي</h1><p>تفاصيل أجرك منفصلة تمامًا عن صلاحيات التدقيق والاعتماد.</p></div><StatusPill tone="pending">تدشيك الراتب</StatusPill></section>
+        <section className="page-title"><div><p className="eyebrow">حساب رئيس المقيمين كطبيب</p><h1>راتبي الشخصي</h1><p>تفاصيل أجرك منفصلة تمامًا عن صلاحيات التدقيق والاعتماد.</p></div><StatusPill tone="pending">تدشيك الراتب</StatusPill></section>
         <section className="doctor-grid">
           <article className="earnings-card"><div className="earnings-head"><div><span>راتب آب الحالي</span><strong>{money(3215000)}</strong></div><span className="growth">↑ 9.8%</span></div><Sparkline /><div className="earnings-foot"><span>من 1 إلى 11 آب</span><b>7 أيام عمل معتمدة</b></div></article>
           <div className="metric-stack"><article className="metric-card teal"><div className="metric-icon">⌁</div><div><span>الاستشاريات</span><strong>{money(1150000)}</strong><small>115 استشارية معتمدة</small></div></article><article className="metric-card sand"><div className="metric-icon">✦</div><div><span>القيصريات والرقود</span><strong>{money(2065000)}</strong><small>بعد تطبيق السقف اليومي</small></div></article></div>
         </section>
-        <section className="panel recent-panel"><div className="panel-head"><div><h2>أيام عملي الأخيرة</h2><p>يمكنك فتح أي Call والاطلاع على احتسابه بالتفصيل</p></div><span className="ai-tag">لا تؤثر صلاحيات التدقيق على هذا الحساب</span></div><div className="day-list">{recentDays.slice(0, 3).map((item) => <button className="day-row" key={item.id} onClick={() => setDetailOpen(true)}><span className="date-tile"><b>{item.date.split(" ")[0]}</b><small>آب</small></span><span className="day-copy"><b>{item.day}</b><small>{item.details}</small></span><StatusPill tone={item.tone}>{item.status}</StatusPill><strong className="row-amount">{money(item.amount)}</strong><span className="chevron">‹</span></button>)}</div></section>
+        <section className="panel recent-panel"><div className="panel-head"><div><h2>أيام عملي الأخيرة</h2><p>يمكنك فتح أي كول والاطلاع على احتسابه بالتفصيل</p></div><span className="ai-tag">لا تؤثر صلاحيات التدقيق على هذا الحساب</span></div><div className="day-list">{recentDays.slice(0, 3).map((item) => <button className="day-row" key={item.id} onClick={() => navigateTo("workLogs")}><span className="date-tile"><b>{item.date.split(" ")[0]}</b><small>آب</small></span><span className="day-copy"><b>{item.day}</b><small>{item.details}</small></span><StatusPill tone={item.tone}>{item.status}</StatusPill><strong className="row-amount">{money(item.amount)}</strong><span className="chevron">‹</span></button>)}</div></section>
       </>
     );
   }
@@ -623,7 +628,7 @@ export default function Home() {
     const visible = auditRows.filter((row) => auditFilter === "الكل" || (auditFilter === "تجاوزات" ? row.over : !row.over));
     return (
       <>
-        <section className="page-title"><div><p className="eyebrow">رئيس الأطباء</p><h1>التدقيق والاعتماد</h1><p>راجع إدخالات الأطباء واتخذ القرار النهائي.</p></div><div className="title-stat"><small>بانتظارك</small><strong>{auditRows.length}</strong></div></section>
+        <section className="page-title"><div><p className="eyebrow">رئيس المقيمين</p><h1>التدقيق والاعتماد</h1><p>راجع إدخالات الأطباء واتخذ القرار النهائي.</p></div><div className="title-stat"><small>بانتظارك</small><strong>{auditRows.length}</strong></div></section>
         <section className="panel table-panel">
           <div className="toolbar"><div className="filters">{["الكل", "ضمن السقف", "تجاوزات"].map((item) => <button className={auditFilter === item ? "active" : ""} onClick={() => setAuditFilter(item)} key={item}>{item}</button>)}</div><label className="table-search"><span>⌕</span><input placeholder="ابحث باسم الطبيب..." /></label></div>
           <div className="data-table audit-table">
@@ -653,9 +658,9 @@ export default function Home() {
   }
 
   function renderRegistry() {
-    const activeTab = role === "accounts" ? "patient" : registryTab;
+    const activeTab = role === "accounts" || role === "doctor" || role === "admin" ? "patient" : registryTab;
     const latest = activeTab === "patient" ? registeredPatients : registeredEmployees;
-    const isDoctorRole = employeeRole === "طبيب مقيم" || employeeRole === "رئيس الأطباء";
+    const isDoctorRole = employeeRole === "طبيب مقيم" || employeeRole === "رئيس المقيمين";
     return (
       <>
         <section className="page-title registry-title">
@@ -679,7 +684,7 @@ export default function Home() {
             <button className={activeTab === "patient" ? "active" : ""} onClick={() => setRegistryTab("patient")}>
               <span>♙</span><div><b>تسجيل مريض</b><small>الملف الطبي وبيانات الدخول</small></div><i>←</i>
             </button>
-            {role === "admin" && <button className={activeTab === "employee" ? "active" : ""} onClick={() => setRegistryTab("employee")}>
+            {role === "chief" && <button className={activeTab === "employee" ? "active" : ""} onClick={() => setRegistryTab("employee")}>
               <span>✦</span><div><b>تسجيل موظف</b><small>الدور والاختصاص والصلاحيات</small></div><i>←</i>
             </button>}
             <div className="registry-tip"><span className="ai-orb">✦</span><p><b>مساعد التسجيل</b><small>{activeTab === "patient" ? "يتحقق من رقم الملف والحقول الأساسية قبل إنشاء سجل المريض." : "يضبط سقوف الأطباء تلقائيًا حسب الدور المختار."}</small></p></div>
@@ -725,7 +730,7 @@ export default function Home() {
                 </div>
                 <div className="form-section-title"><span>2</span><div><b>الدور والاختصاص</b><small>تُبنى الصلاحيات بناءً على الدور</small></div></div>
                 <div className="registry-fields">
-                  <label className="form-field"><span>الدور الوظيفي <b>*</b></span><select name="role" required value={employeeRole} onChange={(event) => setEmployeeRole(event.target.value)}><option>طبيب مقيم</option><option>رئيس الأطباء</option><option>موظف استقبال</option><option>موظف حسابات</option><option>الإدارة العليا</option></select></label>
+                  <label className="form-field"><span>الدور الوظيفي <b>*</b></span><select name="role" required value={employeeRole} onChange={(event) => setEmployeeRole(event.target.value)}><option>طبيب مقيم</option><option>رئيس المقيمين</option><option>موظف استقبال</option><option>الحسابات</option><option>الإدارة العليا</option></select></label>
                   <label className="form-field"><span>الاختصاص <b>*</b></span><select name="specialty" required defaultValue=""><option value="" disabled>اختر الاختصاص</option><option>النسائية والتوليد</option><option>الجراحة العامة</option><option>الطب الباطني</option><option>طب الأطفال</option><option>التخدير والعناية</option><option>الأشعة</option><option>المختبر</option><option>الاستقبال</option><option>الحسابات</option><option>الإدارة</option></select></label>
                   <label className="form-field"><span>حالة الحساب</span><select name="status" defaultValue="نشط"><option>نشط</option><option>موقوف مؤقتًا</option><option>إجازة</option></select></label>
                 </div>
@@ -863,11 +868,14 @@ export default function Home() {
     const roleCapabilities: Record<Role, { title: string; description: string; action: string }[]> = {
       doctor: [
         { title: "استلام المناوبة", description: "مشاهدة المرضى والأولوية والإجراء التالي ثم تأكيد انتقال المسؤولية.", action: "handover" },
-        { title: "توثيق يوم العمل", description: "إضافة الاستشاريات والولادات والرقود مع احتساب السقف تلقائيًا.", action: "days" },
+        { title: "توثيق يوم العمل", description: "إضافة الكول والاستشاريات وصورة كل حالة والولادات والرقود والحالات الخاصة.", action: "workLogs" },
+        { title: "الاعتراض المالي", description: "إرسال اعتراض خاص ومتابعة نتيجة التدقيق والتسوية في كشف الحساب.", action: "objections" },
         { title: "متابعة الحساب", description: "عرض البيانات المعتمدة ومصدر كل مبلغ حسب التاريخ.", action: "reports" },
       ],
       chief: [
         { title: "التدقيق والاعتماد", description: "مراجعة الإثباتات والتجاوزات قبل تحويل المبلغ إلى الحسابات.", action: "audit" },
+        { title: "إدارة حسابات المستخدمين", description: "مراجعة طلبات الدخول وإنشاء الحسابات وتحديد الصلاحية والاختصاص.", action: "accessRequests" },
+        { title: "تسوية الاعتراضات", description: "تدقيق اعتراض الطبيب وإظهار كشف واضح وإضافة الاستحقاق الصحيح.", action: "objections" },
         { title: "إدارة المناوبات", description: "التأكد من اكتمال التسليم وعدم ضياع متابعة أي مريض.", action: "handover" },
         { title: "ضبط السقوف", description: "تحديث سقف كل طبيب مع تطبيق قواعد الحساب الموحدة.", action: "settings" },
       ],
@@ -877,9 +885,14 @@ export default function Home() {
         { title: "التقارير المالية", description: "مراجعة الإيرادات والمصروفات والرواتب حسب الفترة.", action: "reports" },
       ],
       admin: [
-        { title: "الموافقة على الحسابات", description: "قبول أو رفض الطبيب أو المستخدم قبل منحه صلاحية النظام.", action: "accessRequests" },
         { title: "لوحة التقارير", description: "متابعة المرضى والولادات والتسليمات والنتائج المالية الفعلية.", action: "reports" },
-        { title: "تسجيل الكادر", description: "إنشاء ملف الموظف وتحديد الدور والاختصاص والحالة.", action: "registry" },
+        { title: "سجلات المناوبات", description: "متابعة السجلات المرسلة والجهات المستلمة والأثر المالي دون تعديلها.", action: "workLogs" },
+        { title: "البحث الإداري", description: "الوصول إلى ملفات المرضى وحالتهم الحالية حسب الصلاحية.", action: "registry" },
+      ],
+      developer: [
+        { title: "سلامة النظام", description: "مراقبة جاهزية قواعد البيانات والخدمات دون تولي القرارات الطبية أو المالية.", action: "settings" },
+        { title: "سجل الأثر", description: "مراجعة السجل التقني للتعديلات عند التحقيق في مشكلة مصرح بها.", action: "workLogs" },
+        { title: "صحة التقارير", description: "التأكد من اتساق مؤشرات التقارير ومصادرها.", action: "reports" },
       ],
     };
     return <><section className="page-title"><div><p className="eyebrow">دليل تشغيلي حسب الدور</p><h1>مهامي وصلاحياتي</h1><p>كل مستخدم يرى ما يخص عمله بعبارات واضحة وخطوات مباشرة.</p></div><StatusPill tone="approved">{currentRole.label}</StatusPill></section><section className="capability-grid">{roleCapabilities[role].map((item, index) => <article className="panel capability-card" key={item.title}><span>{index + 1}</span><div><h2>{item.title}</h2><p>{item.description}</p></div><button className="text-button" onClick={() => navigateTo(item.action as View)}>فتح المهمة ←</button></article>)}</section><section className="panel safety-workflow"><div><span>✓</span><p><b>ضوابط تحمي دورة العمل</b><small>تأكيد هوية المريض · سجل زمني للتسليم · موافقة قبل تفعيل الحساب · تتبع مصدر المبلغ.</small></p></div><div><span>⇄</span><p><b>لا تضيع المتابعة بين المناوبات</b><small>تبقى مسؤولية المريض للطبيب الأول حتى يؤكد الطبيب الثاني الاستلام.</small></p></div></section></>;
@@ -888,11 +901,11 @@ export default function Home() {
   function renderAccessRequests() {
     const pendingCount = accessRequests.filter((item) => item.status === "بانتظار الموافقة").length;
     const providerLabel = { email: "البريد الإلكتروني", google: "Google", apple: "Apple" };
-    return <><section className="page-title"><div><p className="eyebrow">مدير النظام · وضع المعاينة</p><h1>طلبات إنشاء الحسابات</h1><p>لن يدخل أي طبيب أو مستخدم جديد قبل موافقة مدير النظام.</p></div><div className="title-stat"><small>بانتظار القرار</small><strong>{IQD.format(pendingCount)}</strong></div></section><section className="demo-notice"><span>i</span><p><b>المراجعة التجريبية مفعّلة مؤقتًا</b><small>الحسابات التجريبية باقية لتجربة الأدوار؛ عند اعتماد التشغيل النهائي تُقفل هذه الشاشة بحساب المدير الحقيقي.</small></p></section><section className="panel access-list"><div className="panel-head"><div><h2>سجل الطلبات</h2><p>البريد والموفر والدور والاختصاص</p></div><button className="secondary-action" onClick={() => setAccessOpen(true)}>＋ طلب تجريبي</button></div>{accessLoading ? <div className="registry-empty"><span className="loading-ring" /><p>جارٍ تحميل الطلبات...</p></div> : accessRequests.length ? accessRequests.map((item) => <div className="access-row" key={item.id}><span className="record-avatar employee">{item.fullName[0]}</span><p><b>{item.fullName}</b><small>{item.email} · {providerLabel[item.provider]} · {item.requestedRole} · {item.specialty}</small></p><StatusPill tone={item.status === "مقبول" ? "approved" : item.status === "مرفوض" ? "returned" : "pending"}>{item.status}</StatusPill>{item.status === "بانتظار الموافقة" && <div className="access-actions"><button onClick={() => reviewAccessRequest(item.id, "مقبول")}>قبول</button><button onClick={() => reviewAccessRequest(item.id, "مرفوض")}>رفض</button></div>}</div>) : <div className="report-empty"><span>♙</span><p><b>لا توجد طلبات حتى الآن</b><small>تظهر هنا الطلبات بعد تحقق المستخدم من بريده أو حسابه الخارجي.</small></p></div>}</section></>;
+    return <><section className="page-title"><div><p className="eyebrow">رئيس المقيمين · وضع المعاينة</p><h1>طلبات إنشاء الحسابات</h1><p>لن يدخل أي طبيب أو مستخدم جديد قبل موافقة رئيس المقيمين وتحديد صلاحيته.</p></div><div className="title-stat"><small>بانتظار القرار</small><strong>{IQD.format(pendingCount)}</strong></div></section><section className="demo-notice"><span>i</span><p><b>المراجعة التجريبية مفعّلة مؤقتًا</b><small>الحسابات التجريبية باقية لتجربة الأدوار؛ عند اعتماد التشغيل النهائي تُقفل هذه الشاشة بحساب رئيس المقيمين الحقيقي.</small></p></section><section className="panel access-list"><div className="panel-head"><div><h2>سجل الطلبات</h2><p>البريد والموفر والدور والاختصاص</p></div><button className="secondary-action" onClick={() => setAccessOpen(true)}>＋ طلب تجريبي</button></div>{accessLoading ? <div className="registry-empty"><span className="loading-ring" /><p>جارٍ تحميل الطلبات...</p></div> : accessRequests.length ? accessRequests.map((item) => <div className="access-row" key={item.id}><span className="record-avatar employee">{item.fullName[0]}</span><p><b>{item.fullName}</b><small>{item.email} · {providerLabel[item.provider]} · {item.requestedRole} · {item.specialty}</small></p><StatusPill tone={item.status === "مقبول" ? "approved" : item.status === "مرفوض" ? "returned" : "pending"}>{item.status}</StatusPill>{item.status === "بانتظار الموافقة" && <div className="access-actions"><button onClick={() => reviewAccessRequest(item.id, "مقبول")}>قبول</button><button onClick={() => reviewAccessRequest(item.id, "مرفوض")}>رفض</button></div>}</div>) : <div className="report-empty"><span>♙</span><p><b>لا توجد طلبات حتى الآن</b><small>تظهر هنا الطلبات بعد تحقق المستخدم من بريده أو حسابه الخارجي.</small></p></div>}</section></>;
   }
 
   function renderDays() {
-    return <><section className="page-title"><div><p className="eyebrow">سجل الطبيب</p><h1>أيام العمل</h1><p>كل إدخالاتك، مرفقاتك وقرارات التدقيق في مكان واحد.</p></div><button className="primary-action" onClick={() => setAddOpen(true)}><b>＋</b> تسجيل يوم عمل</button></section><section className="panel all-days"><div className="toolbar"><div className="filters"><button className="active">الكل</button><button>معتمد</button><button>تدشيك الراتب</button><button>أُعيد</button></div><label className="table-search"><span>⌕</span><input placeholder="بحث في الأيام..." /></label></div><div className="day-list">{recentDays.concat([{ id: 5, day: "الثلاثاء", date: "5 آب 2026", status: "معتمد", amount: 210000, tone: "approved", details: "7 استشاريات · ولادة طبيعية" }]).map((item) => <button className="day-row" key={item.id} onClick={() => setDetailOpen(true)}><span className="date-tile"><b>{item.date.split(" ")[0]}</b><small>آب</small></span><span className="day-copy"><b>{item.day}</b><small>{item.details}</small></span><StatusPill tone={item.tone}>{item.status}</StatusPill><strong className="row-amount">{money(item.amount)}</strong><span className="chevron">‹</span></button>)}</div></section></>;
+    return <ResidentWorkflow role={role} accountName={currentRole.name} />;
   }
 
   function renderContent() {
@@ -905,10 +918,11 @@ export default function Home() {
     if (view === "reports") return renderReports();
     if (view === "capabilities") return renderCapabilities();
     if (view === "accessRequests") return renderAccessRequests();
-    if (view === "days") return renderDays();
+    if (view === "days" || view === "workLogs") return renderDays();
+    if (view === "objections") return <ResidentWorkflow role={role} accountName={currentRole.name} mode="objections" />;
     if (role === "chief") return renderChiefDashboard();
     if (role === "accounts") return renderAccountsDashboard();
-    if (role === "admin") return renderAdminDashboard();
+    if (role === "admin" || role === "developer") return renderAdminDashboard();
     return renderDoctorDashboard();
   }
 
@@ -929,35 +943,24 @@ export default function Home() {
         <header className="topbar">
           <div className="mobile-brand"><button type="button" className="menu-trigger" aria-label="إظهار القائمة الجانبية" onClick={() => setSidebarExpanded(true)}>☰</button><span>ب</span><b>البياتي</b></div>
           <label className="global-search"><span>⌕</span><input aria-label="البحث في النظام" placeholder="ابحث عن مريض، طبيب أو يوم عمل..." /></label>
-          <div className="top-actions"><span className="demo-chip">وضع تجريبي</span><button className="account-request-button" onClick={() => setAccessOpen(true)}>طلب حساب</button><button className="theme-button" aria-label="تبديل الوضع الليلي والنهاري" title="ليلي / نهاري" onClick={toggleTheme}><span className="theme-sun">☀</span><span className="theme-moon">☾</span></button><button className="icon-button" aria-label="الإشعارات"><span>♢</span><i /></button><span className="divider" /><div className="role-picker"><span className="user-avatar">{currentRole.name.split(" ")[1]?.[0] || "ب"}</span><div><b>{currentRole.name}</b><small>{currentRole.label}</small></div><select aria-label="تبديل الحساب التجريبي" value={role} onChange={(event) => changeRole(event.target.value as Role)}>{roles.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></div></div>
+          <div className="top-actions"><span className="demo-chip">وضع تجريبي</span><button className="account-request-button" onClick={() => setAccessOpen(true)}>طلب حساب</button><button className="theme-button" aria-label="تبديل الوضع الليلي والنهاري" title="ليلي / نهاري" onClick={toggleTheme}><span className="theme-sun">☀</span><span className="theme-moon">☾</span></button><button className="icon-button" aria-label="الإشعارات"><span>♢</span><i /></button><span className="divider" /><div className="role-picker"><span className="user-avatar">{currentRole.name.replace("د. ", "")[0] || "ب"}</span><div><b>{currentRole.name}</b><small>{currentRole.label}</small></div><select aria-label="تبديل الحساب التجريبي" value={activeAccountId} onChange={(event) => changeAccount(event.target.value)}>{demoAccounts.map((item) => <option key={item.id} value={item.id}>{item.name} — {item.label}</option>)}</select></div></div>
         </header>
         <main>{renderContent()}</main>
         <nav className="mobile-nav" aria-label="قائمة الهاتف">{navItems.slice(0, 4).map((item) => <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => navigateTo(item.id)}><Icon>{item.icon}</Icon><small>{item.label.split(" ")[0]}</small></button>)}</nav>
       </div>
 
-      {addOpen && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setAddOpen(false)}><form className="entry-modal" onSubmit={submitDay}>
-        <div className="modal-head"><div><p className="eyebrow">إدخال سريع · 11 آب 2026</p><h2>تسجيل يوم عمل جديد</h2><p>سيطبّق محرك البياتي القواعد قبل الحفظ.</p></div><button type="button" className="close-button" onClick={() => setAddOpen(false)}>×</button></div>
-        <div className="smart-strip"><span className="ai-orb">✦</span><p><b>الحساب الذكي نشط</b><small>الحد: 10 استشاريات · سقف العمليات والرقود: {money(200000)}</small></p></div>
-        <div className="entry-section"><div className="section-label"><span>1</span><div><b>الاستشاريات</b><small>تُحسب خارج السقف اليومي</small></div></div><label className="number-field"><span>عدد الاستشاريات</span><div><button type="button" onClick={() => setConsultations(Math.max(0, consultations - 1))}>−</button><input type="number" min="0" value={consultations} onChange={(event) => setConsultations(Number(event.target.value))} /><button type="button" onClick={() => setConsultations(consultations + 1)}>＋</button></div></label>{consultations > 10 && <p className="inline-warning">سيُحتسب 10 فقط حسب سقفك الحالي.</p>}<button className="upload-box" type="button" onClick={() => notify("يمكنك اختيار الصور من الكاميرا أو الجهاز", "info")}><span>▧</span><b>إرفاق صور الإثباتات</b><small>الكاميرا أو معرض الصور</small></button></div>
-        <div className="entry-section"><div className="section-label"><span>2</span><div><b>العمليات والرقود</b><small>تدخل ضمن السقف اليومي</small></div></div><div className="procedure-inputs"><label><span>ولادة طبيعية</span><input type="number" min="0" value={births} onChange={(event) => setBirths(Number(event.target.value))} /></label><label><span>عملية قيصرية</span><input type="number" min="0" value={cesareans} onChange={(event) => setCesareans(Number(event.target.value))} /></label><label><span>حالات رقود مدفوعة</span><input type="number" min="0" value={inpatients} onChange={(event) => setInpatients(Number(event.target.value))} /></label></div></div>
-        <div className="calculation-box"><div><span>المبلغ الأولي</span><b>{money(dailyCalculation.enteredTotal)}</b></div>{capDiscount > 0 && <div className="discount-line"><span>خصم تجاوز السقف</span><b>− {money(capDiscount)}</b></div>}<div className="final-line"><span>المبلغ المتوقع بعد القواعد</span><strong>{money(estimatedTotal)}</strong></div></div>
-        <div className="modal-actions"><button type="button" className="secondary-action" onClick={() => setAddOpen(false)}>إلغاء</button><button className="primary-action" type="submit">حفظ وإغلاق <span>←</span></button></div>
-      </form></div>}
-
       {accessOpen && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setAccessOpen(false)}><form className="entry-modal access-modal" onSubmit={startAccessRequest}>
-        <div className="modal-head"><div><p className="eyebrow">حساب جديد بموافقة الإدارة</p><h2>طلب دخول إلى نظام البياتي</h2><p>تحقق من هويتك أولًا، ثم يراجع مدير النظام الدور والاختصاص.</p></div><button type="button" className="close-button" aria-label="إغلاق" onClick={() => setAccessOpen(false)}>×</button></div>
+        <div className="modal-head"><div><p className="eyebrow">حساب جديد بموافقة رئيس المقيمين</p><h2>طلب دخول إلى نظام البياتي</h2><p>تحقق من هويتك أولًا، ثم يراجع رئيس المقيمين الدور والاختصاص.</p></div><button type="button" className="close-button" aria-label="إغلاق" onClick={() => setAccessOpen(false)}>×</button></div>
         <div className="demo-notice compact"><span>i</span><p><b>الحسابات التجريبية ستبقى ظاهرة</b><small>يمكن للإدارة مواصلة تجربة النظام أثناء جمع طلبات المستخدمين الحقيقيين.</small></p></div>
         <div className="access-fields">
           <label className="form-field"><span>الاسم الكامل</span><input name="fullName" required placeholder="الاسم كما سيظهر في النظام" /></label>
           <label className="form-field"><span>البريد الإلكتروني</span><input name="email" type="email" required dir="ltr" placeholder="name@gmail.com" /></label>
-          <label className="form-field"><span>الدور المطلوب</span><select name="requestedRole" required defaultValue="طبيب مقيم"><option>طبيب مقيم</option><option>رئيس الأطباء</option><option>قسم الحسابات</option><option>موظف تسجيل</option><option>الإدارة العليا</option></select></label>
+          <label className="form-field"><span>الدور المطلوب</span><select name="requestedRole" required defaultValue="طبيب مقيم"><option>طبيب مقيم</option><option>رئيس المقيمين</option><option>الحسابات</option><option>الإدارة العليا</option></select></label>
           <label className="form-field"><span>الاختصاص</span><select name="specialty" required defaultValue="النسائية والتوليد"><option>النسائية والتوليد</option><option>الأطفال وحديثو الولادة</option><option>التخدير</option><option>التمريض</option><option>الحسابات</option><option>التسجيل والاستعلامات</option><option>إدارة المستشفى</option></select></label>
         </div>
         <div className="oauth-actions"><button name="provider" value="email" disabled={accessSaving}><span>@</span> المتابعة عبر البريد الإلكتروني</button><button name="provider" value="google" disabled={accessSaving}><span>G</span> المتابعة عبر Google</button><button name="provider" value="apple" disabled={accessSaving}><span>●</span> المتابعة عبر Apple</button></div>
-        <p className="access-footnote">لن يُفعّل الحساب بعد التحقق مباشرة؛ يبقى بحالة «بانتظار الموافقة» حتى يعتمد مدير النظام الطلب.</p>
+        <p className="access-footnote">لن يُفعّل الحساب بعد التحقق مباشرة؛ يبقى بحالة «بانتظار الموافقة» حتى يعتمد رئيس المقيمين الطلب.</p>
       </form></div>}
-
-      {detailOpen && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setDetailOpen(false)}><aside className="detail-drawer"><div className="modal-head"><div><p className="eyebrow">الأربعاء، 6 آب 2026</p><h2>تفاصيل يوم العمل</h2></div><button className="close-button" onClick={() => setDetailOpen(false)}>×</button></div><StatusPill tone="returned">أُعيد للمراجعة</StatusPill><div className="review-note"><span>!</span><p><b>ملاحظة رئيس الأطباء</b>يرجى إرفاق صورة إثبات الاستشارية الخامسة ثم حفظ التعديل.</p></div><div className="detail-lines"><div><span>5 استشاريات</span><b>{money(50000)}</b></div><div><span>ولادة طبيعية · زينب علي</span><b>{money(80000)}</b></div><div><span>رقود مدفوع · حالتان</span><b>{money(50000)}</b></div><div className="subtotal"><span>المبلغ الأولي</span><b>{money(180000)}</b></div><div className="discount-line"><span>خصم التدقيق</span><b>− {money(55000)}</b></div><div className="total"><span>المبلغ الحالي</span><strong>{money(125000)}</strong></div></div><button className="upload-box drawer-upload" onClick={() => notify("تمت إضافة صورة الإثبات بنجاح")}><span>▧</span><b>إضافة الإثبات الناقص</b><small>ثم حفظ اليوم ليظهر للتدقيق</small></button><button className="primary-action full" onClick={() => { setDetailOpen(false); notify("حُفظ اليوم بعد استكمال الإثبات وظهر للتدقيق"); }}>حفظ التعديل</button></aside></div>}
       {toast && <div className={`toast ${toast.kind}`}><span>{toast.kind === "success" ? "✓" : "i"}</span>{toast.message}</div>}
     </div>
   );

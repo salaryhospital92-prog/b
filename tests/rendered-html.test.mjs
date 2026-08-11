@@ -29,18 +29,22 @@ test("server-renders the Arabic hospital dashboard", async () => {
 });
 
 test("keeps Supabase credentials server-side and covers responsive screens", async () => {
-  const [api, handoverApi, reportApi, accessApi, browserClient, page, serverClient, css, migration, handoverMigration, reportingMigration, exampleEnv] = await Promise.all([
+  const [api, handoverApi, reportApi, accessApi, workLogApi, objectionApi, browserClient, page, residentWorkflow, serverClient, css, migration, handoverMigration, reportingMigration, residentMigration, exampleEnv] = await Promise.all([
     readFile(new URL("../app/api/registry/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/handover/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/reports/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/access-requests/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/work-logs/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/objections/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../lib/supabase-browser.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/resident-workflow.tsx", import.meta.url), "utf8"),
     readFile(new URL("../lib/supabase-server.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
     readFile(new URL("../supabase/migrations/202608110001_initial_hospital_schema.sql", import.meta.url), "utf8"),
     readFile(new URL("../supabase/migrations/202608110002_shift_handovers.sql", import.meta.url), "utf8"),
     readFile(new URL("../supabase/migrations/202608110003_reporting_and_access.sql", import.meta.url), "utf8"),
+    readFile(new URL("../supabase/migrations/202608110004_resident_workflow.sql", import.meta.url), "utf8"),
     readFile(new URL("../.env.example", import.meta.url), "utf8"),
   ]);
 
@@ -52,6 +56,11 @@ test("keeps Supabase credentials server-side and covers responsive screens", asy
   assert.match(reportApi, /topDoctors/);
   assert.match(accessApi, /auth\.getUser\(token\)/);
   assert.match(accessApi, /بانتظار الموافقة/);
+  assert.match(accessApi, /رئيس المقيمين/);
+  assert.match(workLogApi, /save_resident_work_log/);
+  assert.match(workLogApi, /consultationEvidence/);
+  assert.match(workLogApi, /createSignedUrls/);
+  assert.match(objectionApi, /resolve_doctor_call_objection/);
   assert.doesNotMatch(browserClient, /SUPABASE_SERVICE_ROLE_KEY/);
   assert.match(serverClient, /SUPABASE_SERVICE_ROLE_KEY/);
   assert.doesNotMatch(api, /NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY/);
@@ -66,6 +75,11 @@ test("keeps Supabase credentials server-side and covers responsive screens", asy
   assert.match(page, /استلام المناوبة/);
   assert.match(page, /التقارير اليومية والأسبوعية والشهرية/);
   assert.match(page, /المتابعة عبر Google/);
+  assert.match(page, /doctor-fanar/);
+  assert.match(page, /developer-system/);
+  assert.match(residentWorkflow, /سجل التعديلات الكامل/);
+  assert.match(residentWorkflow, /صورة لكل حالة استشارية/);
+  assert.match(residentWorkflow, /اعتراضاتي المالية/);
   assert.match(css, /data-theme="dark"/);
   assert.match(css, /report-kpis/);
 
@@ -78,6 +92,13 @@ test("keeps Supabase credentials server-side and covers responsive screens", asy
   assert.match(handoverMigration, /attending_doctor = handover_record\.to_doctor_name/);
   assert.match(reportingMigration, /create table if not exists public\.financial_transactions/);
   assert.match(reportingMigration, /create table if not exists public\.system_access_requests/);
+  for (const table of ["doctor_call_consultations", "doctor_call_revisions", "doctor_call_deliveries", "doctor_call_objections"]) {
+    assert.match(residentMigration, new RegExp(`create table if not exists public\\.${table}`));
+  }
+  assert.match(residentMigration, /create or replace function public\.save_resident_work_log/);
+  assert.match(residentMigration, /create or replace function public\.resolve_doctor_call_objection/);
+  assert.match(residentMigration, /consultation-evidence/);
+  assert.match(residentMigration, /last_edited_by_name/);
 });
 
 test("ships installable PWA icon metadata", async () => {
