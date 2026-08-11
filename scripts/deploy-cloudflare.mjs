@@ -72,9 +72,10 @@ let commit = "unknown";
 let dirty = "";
 try {
   commit = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
-  dirty = execFileSync("git", ["status", "--porcelain"], { encoding: "utf8" }).trim();
+  dirty = execFileSync("git", ["status", "--porcelain", "--untracked-files=no"], { encoding: "utf8" }).trim();
 } catch { /* deploying outside a checkout is allowed */ }
 
+// Untracked notes are ignored; only tracked edits change what gets built.
 // A dirty tree would stamp the Worker with a commit that does not describe what
 // is actually running — exactly the lie the version check exists to catch.
 if (dirty && !process.env.ALLOW_DIRTY) {
