@@ -77,6 +77,8 @@ test("keeps Supabase credentials server-side and covers responsive screens", asy
   assert.match(page, /المتابعة عبر Google/);
   assert.match(page, /doctor-fanar/);
   assert.match(page, /developer-system/);
+  assert.match(page, /brand-mark/);
+  assert.match(page, /sidebarExpanded \? "→" : "←"/);
   assert.match(residentWorkflow, /سجل التعديلات الكامل/);
   assert.match(residentWorkflow, /صورة لكل حالة استشارية/);
   assert.match(residentWorkflow, /اعتراضاتي المالية/);
@@ -85,6 +87,8 @@ test("keeps Supabase credentials server-side and covers responsive screens", asy
   assert.match(css, /visual clarity pass/);
   assert.match(css, /\.payment-row[^}]*font-size:\s*13px/);
   assert.match(css, /--cream:\s*#0e241e/);
+  assert.match(css, /background-image:\s*url\("\/icons\/icon-192\.png"\)/);
+  assert.match(css, /sidebar-collapsed \.nav-icon[^}]*font-size:\s*26px/);
 
   for (const table of ["employees", "patients", "patient_events", "procedures", "doctor_calls", "call_details", "inpatient_payments", "doctor_caps", "audit_logs"]) {
     assert.match(migration, new RegExp(`create table if not exists public\\.${table}`));

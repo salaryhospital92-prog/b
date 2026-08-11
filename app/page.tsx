@@ -118,47 +118,47 @@ export default function Home() {
     if (role === "doctor") return [
       { id: "overview" as View, label: "الرئيسية", icon: "⌂" },
       { id: "handover" as View, label: "استلام المناوبة", icon: "⇄" },
-      { id: "registry" as View, label: "تسجيل مريض", icon: "＋" },
-      { id: "workLogs" as View, label: "سجل المناوبات", icon: "▣" },
+      { id: "registry" as View, label: "تسجيل مريض", icon: "✚" },
+      { id: "workLogs" as View, label: "سجل المناوبات", icon: "▤" },
       { id: "objections" as View, label: "اعتراضاتي", icon: "!" },
-      { id: "reports" as View, label: "كشف الحساب", icon: "≋" },
-      { id: "capabilities" as View, label: "دليل مهامي", icon: "◎" },
+      { id: "reports" as View, label: "كشف الحساب", icon: "▥" },
+      { id: "capabilities" as View, label: "دليل مهامي", icon: "؟" },
     ];
     if (role === "chief") return [
       { id: "overview" as View, label: "الرئيسية", icon: "⌂" },
       { id: "handover" as View, label: "تسليم المناوبات", icon: "⇄" },
-      { id: "workLogs" as View, label: "سجلات الأطباء", icon: "▣" },
+      { id: "workLogs" as View, label: "سجلات الأطباء", icon: "▤" },
       { id: "objections" as View, label: "الاعتراضات", icon: "!" },
       { id: "personalSalary" as View, label: "راتبي الشخصي", icon: "◇" },
       { id: "audit" as View, label: "التدقيق والاعتماد", icon: "✓" },
       { id: "accessRequests" as View, label: "إدارة الحسابات", icon: "♙" },
-      { id: "settings" as View, label: "سقوف الأطباء", icon: "⌁" },
-      { id: "reports" as View, label: "التقارير", icon: "≋" },
-      { id: "capabilities" as View, label: "دليل الصلاحيات", icon: "◎" },
+      { id: "settings" as View, label: "سقوف الأطباء", icon: "⚙" },
+      { id: "reports" as View, label: "التقارير", icon: "▥" },
+      { id: "capabilities" as View, label: "دليل الصلاحيات", icon: "؟" },
     ];
     if (role === "accounts") return [
       { id: "overview" as View, label: "الرئيسية", icon: "⌂" },
-      { id: "registry" as View, label: "تسجيل مريض", icon: "＋" },
-      { id: "workLogs" as View, label: "سجلات المناوبات", icon: "▣" },
-      { id: "payments" as View, label: "حالات الدفع", icon: "◫" },
-      { id: "reports" as View, label: "المطابقات", icon: "≋" },
-      { id: "capabilities" as View, label: "دليل المهام", icon: "◎" },
+      { id: "registry" as View, label: "تسجيل مريض", icon: "✚" },
+      { id: "workLogs" as View, label: "سجلات المناوبات", icon: "▤" },
+      { id: "payments" as View, label: "حالات الدفع", icon: "¤" },
+      { id: "reports" as View, label: "المطابقات", icon: "▥" },
+      { id: "capabilities" as View, label: "دليل المهام", icon: "؟" },
     ];
     if (role === "admin") return [
       { id: "overview" as View, label: "لوحة القيادة", icon: "⌂" },
-      { id: "registry" as View, label: "مركز التسجيل", icon: "＋" },
-      { id: "workLogs" as View, label: "سجلات المناوبات", icon: "▣" },
-      { id: "reports" as View, label: "التقارير الشاملة", icon: "≋" },
+      { id: "registry" as View, label: "مركز التسجيل", icon: "✚" },
+      { id: "workLogs" as View, label: "سجلات المناوبات", icon: "▤" },
+      { id: "reports" as View, label: "التقارير الشاملة", icon: "▥" },
       { id: "payments" as View, label: "البحث عن مريض", icon: "⌕" },
-      { id: "settings" as View, label: "إدارة النظام", icon: "⌁" },
-      { id: "capabilities" as View, label: "دليل الصلاحيات", icon: "◎" },
+      { id: "settings" as View, label: "إدارة النظام", icon: "⚙" },
+      { id: "capabilities" as View, label: "دليل الصلاحيات", icon: "؟" },
     ];
     return [
       { id: "overview" as View, label: "حالة النظام", icon: "⌂" },
-      { id: "workLogs" as View, label: "سجل التعديلات", icon: "▣" },
-      { id: "reports" as View, label: "مراقبة التقارير", icon: "≋" },
-      { id: "settings" as View, label: "إعدادات النظام", icon: "⌁" },
-      { id: "capabilities" as View, label: "صلاحيات المطور", icon: "◎" },
+      { id: "workLogs" as View, label: "سجل التعديلات", icon: "▤" },
+      { id: "reports" as View, label: "مراقبة التقارير", icon: "▥" },
+      { id: "settings" as View, label: "إعدادات النظام", icon: "⚙" },
+      { id: "capabilities" as View, label: "صلاحيات المطور", icon: "؟" },
     ];
   }, [role]);
 
@@ -929,19 +929,19 @@ export default function Home() {
   return (
     <div className={`app-shell ${sidebarExpanded ? "sidebar-open" : "sidebar-collapsed"}`}>
       <aside className="sidebar" aria-label="القائمة الجانبية">
-        <div className="brand"><span>ب</span><div><b>البياتي</b><small>النظام الطبي الذكي</small></div></div>
-        <button className="sidebar-toggle" type="button" aria-expanded={sidebarExpanded} aria-label={sidebarExpanded ? "طي القائمة الجانبية" : "إظهار القائمة الجانبية"} onClick={() => setSidebarExpanded((expanded) => !expanded)}><Icon>{sidebarExpanded ? "→" : "☰"}</Icon><span>{sidebarExpanded ? "طي القائمة" : "إظهار القائمة"}</span></button>
+        <div className="brand"><span className="brand-mark" role="img" aria-label="شعار نظام البياتي" /><div><b>البياتي</b><small>النظام الطبي الذكي</small></div></div>
+        <button className="sidebar-toggle" data-label={sidebarExpanded ? "طي القائمة" : "إظهار القائمة"} type="button" aria-expanded={sidebarExpanded} aria-label={sidebarExpanded ? "طي القائمة الجانبية" : "إظهار القائمة الجانبية"} onClick={() => setSidebarExpanded((expanded) => !expanded)}><Icon>{sidebarExpanded ? "→" : "←"}</Icon><span>{sidebarExpanded ? "طي القائمة" : "إظهار القائمة"}</span></button>
         <nav aria-label="القائمة الرئيسية">
           <p>القائمة الرئيسية</p>
-          {navItems.map((item) => <button key={item.id} title={!sidebarExpanded ? item.label : undefined} className={view === item.id ? "active" : ""} onClick={() => navigateTo(item.id)}><Icon>{item.icon}</Icon><span>{item.label}</span>{item.id === "audit" && auditRows.length > 0 && <i className="nav-count">{auditRows.length}</i>}</button>)}
+          {navItems.map((item) => <button key={item.id} data-label={item.label} title={!sidebarExpanded ? item.label : undefined} className={view === item.id ? "active" : ""} onClick={() => navigateTo(item.id)}><Icon>{item.icon}</Icon><span>{item.label}</span>{item.id === "audit" && auditRows.length > 0 && <i className="nav-count">{auditRows.length}</i>}</button>)}
         </nav>
-        <div className="sidebar-bottom"><button title={!sidebarExpanded ? "مركز المساعدة" : undefined} onClick={() => navigateTo("settings")}><Icon>؟</Icon><span>مركز المساعدة</span></button><div className="secure-chip"><span>✓</span><p><b>بياناتك محمية</b><small>آخر مزامنة: الآن</small></p></div></div>
+        <div className="sidebar-bottom"><button data-label="مركز المساعدة" title={!sidebarExpanded ? "مركز المساعدة" : undefined} onClick={() => navigateTo("settings")}><Icon>؟</Icon><span>مركز المساعدة</span></button><div className="secure-chip"><span>✓</span><p><b>بياناتك محمية</b><small>آخر مزامنة: الآن</small></p></div></div>
       </aside>
       {sidebarExpanded && <button type="button" className="sidebar-scrim" aria-label="إغلاق القائمة" onClick={() => setSidebarExpanded(false)} />}
 
       <div className="main-column">
         <header className="topbar">
-          <div className="mobile-brand"><button type="button" className="menu-trigger" aria-label="إظهار القائمة الجانبية" onClick={() => setSidebarExpanded(true)}>☰</button><span>ب</span><b>البياتي</b></div>
+          <div className="mobile-brand"><button type="button" className="menu-trigger" aria-label="إظهار القائمة الجانبية" onClick={() => setSidebarExpanded(true)}>☰</button><span className="brand-mark" role="img" aria-label="شعار نظام البياتي" /><b>البياتي</b></div>
           <label className="global-search"><span>⌕</span><input aria-label="البحث في النظام" placeholder="ابحث عن مريض، طبيب أو يوم عمل..." /></label>
           <div className="top-actions"><span className="demo-chip">وضع تجريبي</span><button className="account-request-button" onClick={() => setAccessOpen(true)}>طلب حساب</button><button className="theme-button" aria-label="تبديل الوضع الليلي والنهاري" title="ليلي / نهاري" onClick={toggleTheme}><span className="theme-sun">☀</span><span className="theme-moon">☾</span></button><button className="icon-button" aria-label="الإشعارات"><span>♢</span><i /></button><span className="divider" /><div className="role-picker"><span className="user-avatar">{currentRole.name.replace("د. ", "")[0] || "ب"}</span><div><b>{currentRole.name}</b><small>{currentRole.label}</small></div><select aria-label="تبديل الحساب التجريبي" value={activeAccountId} onChange={(event) => changeAccount(event.target.value)}>{demoAccounts.map((item) => <option key={item.id} value={item.id}>{item.name} — {item.label}</option>)}</select></div></div>
         </header>
