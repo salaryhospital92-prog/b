@@ -69,18 +69,16 @@ const missing = RUNTIME_KEYS.filter((key) => !runtime[key]);
 if (missing.length) fail(`قيم ناقصة في ${ENV_FILE}: ${missing.join(", ")}`);
 
 let commit = "unknown";
+let dirty = "";
 try {
   commit = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
-  // A dirty tree would stamp the Worker with a commit that does not describe
-  // what is actually running, which is exactly the lie the version check exists
-  // to catch. Commit first, or pass ALLOW_DIRTY=1 for a deliberate throwaway.
-  const dirty = execFileSync("git", ["status", "--porcelain"], { encoding: "utf8" }).trim();
-  if (dirty && !process.env.ALLOW_DIRTY) {
-    fail(`هناك تعديلات غير محفوظة — احفظها أولًا حتى تطابق بصمة النسخة ما يعمل فعلًا:\n${dirty.split("\n").slice(0, 10).join("\n")}`);
-  }
-} catch (error) {
-  if (error?.status === 1 && String(error.message).includes("تعديلات")) throw error;
-  /* deploying outside a checkout is allowed */
+  dirty = execFileSync("git", ["status", "--porcelain"], { encoding: "utf8" }).trim();
+} catch { /* deploying outside a checkout is allowed */ }
+
+// A dirty tree would stamp the Worker with a commit that does not describe what
+// is actually running — exactly the lie the version check exists to catch.
+if (dirty && !process.env.ALLOW_DIRTY) {
+  fail(`هناك تعديلات غير محفوظة، فبصمة النسخة لن تطابق ما يعمل فعلًا. احفظها أولًا:\n${dirty.split("\n").slice(0, 10).join("\n")}`);
 }
 
 console.log(`\nنشر إلى Cloudflare · النسخة ${commit.slice(0, 7)}\n`);
