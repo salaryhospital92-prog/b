@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const page = await readFile(new URL("../app/[[...view]]/page.tsx", import.meta.url), "utf8");
+const page = await readFile(new URL("../app/app-shell.tsx", import.meta.url), "utf8");
 const landing = await readFile(new URL("../app/login-landing.tsx", import.meta.url), "utf8");
 const route = await readFile(new URL("../app/api/auth/login/route.ts", import.meta.url), "utf8");
 const session = await readFile(new URL("../lib/session.ts", import.meta.url), "utf8");
@@ -64,8 +64,10 @@ test("changing a password ends the other sessions", () => {
 });
 
 test("only the developer account may preview another identity", () => {
-  assert.match(page, /sessionUser\?\.role === "مطور النظام" && <select/);
   assert.match(page, /const isDeveloper = sessionUser\?\.role === "مطور النظام"/);
+  assert.match(page, /\{isDeveloper && <select aria-label="معاينة حساب آخر"/);
+  // The preview must not be able to override anyone else's real identity.
+  assert.match(page, /const currentRole = isDeveloper\s*\?/);
 });
 
 test("the login screen asks for credentials, not for a name to pick", () => {

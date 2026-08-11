@@ -1129,3 +1129,47 @@ main { padding-top: 42px; }
 
 .session-splash { min-height: 100dvh; display: grid; place-content: center; justify-items: center; gap: 15px; background: var(--cream); }
 .session-splash p { margin: 0; color: var(--muted); font-size: 10px; }
+
+/* ---- Account menu on the header name ---- */
+.account-menu-wrap { position: relative; }
+.account-trigger { display: flex; align-items: center; gap: 9px; padding: 5px 9px 5px 6px; border-radius: 12px; border: 1px solid transparent; background: transparent; color: inherit; font: inherit; cursor: pointer; transition: background .15s ease, border-color .15s ease; }
+.account-trigger:hover, .account-trigger[aria-expanded="true"] { background: var(--surface); border-color: var(--line); }
+.account-trigger > div { display: flex; flex-direction: column; gap: 1px; text-align: right; }
+.account-trigger b { font-size: 10px; }
+.account-trigger small { color: var(--muted); font-size: 8px; }
+.account-trigger > i { color: var(--muted); font-style: normal; font-size: 10px; }
+.user-avatar img { width: 100%; height: 100%; border-radius: inherit; object-fit: cover; }
+.user-avatar.large { width: 44px; height: 44px; font-size: 16px; flex-shrink: 0; }
+
+.account-panel { position: absolute; top: calc(100% + 9px); left: 0; z-index: 60; width: min(320px, calc(100vw - 32px)); display: flex; flex-direction: column; gap: 3px; padding: 11px; border-radius: 16px; border: 1px solid var(--line); background: var(--card); box-shadow: 0 20px 45px rgba(10,40,32,.16); }
+.account-panel header { display: flex; align-items: center; gap: 10px; padding: 5px 5px 11px; border-bottom: 1px solid var(--line); margin-bottom: 5px; }
+.account-panel header div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.account-panel header b { font-size: 11px; }
+.account-panel header small { color: var(--muted); font-size: 8px; overflow: hidden; text-overflow: ellipsis; }
+.account-panel > button { display: flex; align-items: center; gap: 9px; min-height: 38px; padding: 0 10px; border-radius: 10px; border: 0; background: transparent; color: inherit; font: inherit; font-size: 10px; font-weight: 600; text-align: right; cursor: pointer; }
+.account-panel > button:hover { background: var(--surface); }
+.account-panel > button > span { width: 26px; height: 26px; display: grid; place-items: center; border-radius: 8px; background: var(--surface); font-size: 12px; }
+.account-panel > button.danger { color: #c2452f; }
+.account-panel > button.danger > span { background: #fbe9e5; }
+
+.account-panel form { display: flex; flex-direction: column; gap: 9px; }
+.account-panel-head { display: flex; align-items: center; gap: 8px; padding-bottom: 9px; border-bottom: 1px solid var(--line); }
+.account-panel-head button { width: 26px; height: 26px; display: grid; place-items: center; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: inherit; font: inherit; cursor: pointer; }
+.account-panel-head b { font-size: 11px; }
+.account-panel form label { display: flex; flex-direction: column; gap: 4px; }
+.account-panel form label > span { color: var(--muted); font-size: 8px; }
+.account-panel form label small { color: var(--muted); font-size: 7px; }
+.account-panel form input { min-height: 36px; padding: 0 11px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); color: inherit; font: inherit; font-size: 10px; }
+.account-panel form input:disabled { opacity: .6; }
+.avatar-row { display: flex; align-items: center; gap: 11px; padding-bottom: 4px; }
+.avatar-row > div { display: flex; flex-direction: column; gap: 4px; }
+.avatar-row button { min-height: 32px; padding: 0 12px; border-radius: 9px; border: 1px solid var(--teal); background: var(--teal-soft); color: var(--teal); font: inherit; font-size: 9px; font-weight: 700; cursor: pointer; }
+.avatar-row small { color: var(--muted); font-size: 7px; }
+.account-note { margin: 0; padding: 8px 11px; border-radius: 9px; background: var(--surface); color: var(--muted); font-size: 8px; line-height: 1.6; }
+.account-save { min-height: 38px; border-radius: 11px; border: 0; background: var(--teal); color: #fff; font: inherit; font-size: 10px; font-weight: 800; cursor: pointer; }
+.account-save:disabled { opacity: .6; cursor: default; }
+
+@media (max-width: 720px) {
+  .account-trigger > div, .account-trigger > i { display: none; }
+  .account-panel { left: auto; right: 0; }
+}

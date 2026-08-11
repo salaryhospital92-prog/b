@@ -47,13 +47,17 @@ function toUser(row: Record<string, unknown>): SessionUser {
   };
 }
 
-/** Resolves the caller from their cookie, or null when there is no live session. */
-export async function currentUser(request: Request): Promise<SessionUser | null> {
-  const token = readSessionCookie(request);
+/** Resolves a raw session token to its employee, or null when it is not live. */
+export async function userForToken(token: string): Promise<SessionUser | null> {
   if (!token) return null;
   const { data, error } = await getSupabaseAdmin().rpc("resume_session", { p_token_hash: await hashToken(token) });
   if (error) throw error;
   return data ? toUser(data as Record<string, unknown>) : null;
+}
+
+/** Resolves the caller from their cookie, or null when there is no live session. */
+export async function currentUser(request: Request): Promise<SessionUser | null> {
+  return userForToken(readSessionCookie(request));
 }
 
 export { toUser };
