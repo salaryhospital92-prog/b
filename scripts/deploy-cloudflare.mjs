@@ -13,7 +13,7 @@ import { existsSync, readFileSync, writeFileSync, unlinkSync } from "node:fs";
 
 const CONFIG = "dist/server/wrangler.json";
 // The Worker name decides the hostname: <name>.<account-subdomain>.workers.dev
-const WORKER_NAME = process.env.WORKER_NAME || "albayati";
+const WORKER_NAME = process.env.WORKER_NAME || "app";
 const ENV_FILE = ".env.local";
 const SECRET_FILE = ".wrangler/secrets.tmp.json";
 
@@ -71,7 +71,17 @@ if (missing.length) fail(`قيم ناقصة في ${ENV_FILE}: ${missing.join(", 
 let commit = "unknown";
 try {
   commit = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
-} catch { /* deploying outside a checkout is allowed */ }
+  // A dirty tree would stamp the Worker with a commit that does not describe
+  // what is actually running, which is exactly the lie the version check exists
+  // to catch. Commit first, or pass ALLOW_DIRTY=1 for a deliberate throwaway.
+  const dirty = execFileSync("git", ["status", "--porcelain"], { encoding: "utf8" }).trim();
+  if (dirty && !process.env.ALLOW_DIRTY) {
+    fail(`هناك تعديلات غير محفوظة — احفظها أولًا حتى تطابق بصمة النسخة ما يعمل فعلًا:\n${dirty.split("\n").slice(0, 10).join("\n")}`);
+  }
+} catch (error) {
+  if (error?.status === 1 && String(error.message).includes("تعديلات")) throw error;
+  /* deploying outside a checkout is allowed */
+}
 
 console.log(`\nنشر إلى Cloudflare · النسخة ${commit.slice(0, 7)}\n`);
 wrangler(["deploy", "-c", CONFIG, "--name", WORKER_NAME, "--var", `COMMIT_REF:${commit}`, "--var", `BUILD_TIME:${new Date().toISOString()}`]);

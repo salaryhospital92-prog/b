@@ -67,8 +67,16 @@ export default function LoginLanding({ accounts, selectedId, isInstalled, notifi
         <header className="login-brand"><span className="brand-mark" role="img" aria-label="شعار نظام البياتي" /><div><b>البياتي</b><small>النظام الطبي الذكي</small></div></header>
         <div className="login-feature-copy">
           <span className="login-kicker">المستشفى أوضح عندما تكون المعلومة في مكانها</span>
-          <h1 aria-live="polite"><span>{activeFeature.title.slice(0, visibleCharacters)}</span><i aria-hidden="true" /></h1>
-          <p className={visibleCharacters === activeFeature.title.length && phase !== "deleting" ? "visible" : ""}>{activeFeature.description}</p>
+          {/* An invisible copy of every headline holds the box at its tallest, so
+              typing never reflows the page under the login fields on a phone. */}
+          <h1 aria-live="polite">
+            <span className="type-sizer" aria-hidden="true">{features.map((feature) => <span key={feature.title}>{feature.title}</span>)}</span>
+            <span className="type-line">{activeFeature.title.slice(0, visibleCharacters)}<i aria-hidden="true" /></span>
+          </h1>
+          <p className={visibleCharacters === activeFeature.title.length && phase !== "deleting" ? "visible" : ""}>
+            <span className="type-sizer" aria-hidden="true">{features.map((feature) => <span key={feature.title}>{feature.description}</span>)}</span>
+            <span>{activeFeature.description}</span>
+          </p>
           <div className="feature-progress" aria-label={`الميزة ${featureIndex + 1} من ${features.length}`}>{features.map((_, index) => <i className={index === featureIndex ? "active" : ""} key={index} />)}</div>
         </div>
         <div className="install-ready-card">

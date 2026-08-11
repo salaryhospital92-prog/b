@@ -1,12 +1,13 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { buildNewbornNames, getInitialPrice, isBirthEntry, MAX_NEWBORNS } from "../lib/rules-engine";
-import { getSupabaseBrowser } from "../lib/supabase-browser";
-import LoginLanding from "./login-landing";
-import ResidentWorkflow from "./resident-workflow";
-import ShiftSchedule from "./shift-schedule";
-import InpatientDays from "./inpatient-days";
+import { usePathname } from "next/navigation";
+import { buildNewbornNames, getInitialPrice, isBirthEntry, MAX_NEWBORNS } from "../../lib/rules-engine";
+import { getSupabaseBrowser } from "../../lib/supabase-browser";
+import LoginLanding from "../login-landing";
+import ResidentWorkflow from "../resident-workflow";
+import ShiftSchedule from "../shift-schedule";
+import InpatientDays from "../inpatient-days";
 
 type Role = "doctor" | "chief" | "accounts" | "admin" | "developer";
 type DemoAccount = { id: string; role: Role; label: string; name: string; username: string; password: string; department: string };
@@ -96,6 +97,32 @@ const demoAccounts: DemoAccount[] = [
   { id: "developer-system", role: "developer", label: "مطور النظام · معاينة جميع الحسابات", name: "Admin", username: "Admin", password: "Ahmed123", department: "إدارة النظام" },
 ];
 
+const VIEW_PATHS: Record<View, string> = {
+  overview: "/dashboard",
+  attendance: "/attendance",
+  registry: "/registry",
+  handover: "/handover",
+  shifts: "/shifts",
+  inpatientDays: "/inpatient-days",
+  days: "/resident-days",
+  workLogs: "/work-logs",
+  objections: "/objections",
+  audit: "/audit",
+  payments: "/payments",
+  reports: "/reports",
+  personalSalary: "/salary",
+  settings: "/settings",
+  accessRequests: "/access-requests",
+  capabilities: "/capabilities",
+};
+const PATH_VIEWS: Record<string, View> = Object.fromEntries(
+  Object.entries(VIEW_PATHS).map(([view, path]) => [path, view as View]),
+) as Record<string, View>;
+
+function viewForPath(pathname: string): View {
+  return PATH_VIEWS[pathname.replace(/\/+$/, "") || "/"] ?? "overview";
+}
+
 function Icon({ children }: { children: string }) {
   return <span className="nav-icon" aria-hidden="true">{children}</span>;
 }
@@ -115,7 +142,8 @@ function StatusPill({ tone, children }: { tone: string; children: React.ReactNod
 export default function Home() {
   const [signedIn, setSignedIn] = useState(false);
   const [activeAccountId, setActiveAccountId] = useState("admin-mustafa");
-  const [view, setView] = useState<View>("overview");
+  const pathname = usePathname();
+  const [view, setView] = useState<View>(() => viewForPath(pathname));
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
   const [auditRows, setAuditRows] = useState(auditSeed);
   const [payments, setPayments] = useState(paymentSeed);
@@ -406,12 +434,24 @@ export default function Home() {
     setSidebarExpanded(false);
   }
 
+  useEffect(() => {
+    function onPopState() {
+      const next = viewForPath(window.location.pathname);
+      setView(next);
+      if (window.location.pathname === "/") setSignedIn(false);
+    }
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+
   function loginDemoAccount(username: string, password: string) {
     const account = demoAccounts.find((item) => item.username.toLocaleLowerCase("en") === username.trim().toLocaleLowerCase("en") && item.password === password);
     if (!account) return false;
     setActiveAccountId(account.id);
-    setView("overview");
+    const target = window.location.pathname === "/" ? "overview" : viewForPath(window.location.pathname);
+    setView(target);
     setSignedIn(true);
+    window.history.replaceState(null, "", VIEW_PATHS[target]);
     window.scrollTo(0, 0);
     return true;
   }
@@ -427,12 +467,21 @@ export default function Home() {
     setSearchOpen(false);
   }
 
-  function navigateTo(nextView: View) {
+  function showView(nextView: View) {
     if (nextView === "reports") setReportLoading(true);
     if (nextView === "accessRequests") setAccessLoading(true);
     if (nextView === "attendance") setAttendanceLoading(true);
     setView(nextView);
+  }
+
+  function navigateTo(nextView: View) {
+    showView(nextView);
     setSidebarExpanded(false);
+    // pushState rather than a router push: the app stays mounted, so the
+    // session survives navigation while the address bar still updates.
+    if (typeof window !== "undefined" && window.location.pathname !== VIEW_PATHS[nextView]) {
+      window.history.pushState(null, "", VIEW_PATHS[nextView]);
+    }
   }
 
   function notify(message: string, kind: "success" | "info" = "success") {
@@ -1417,7 +1466,7 @@ export default function Home() {
           <p>القائمة الرئيسية</p>
           {navItems.map((item) => <button key={item.id} data-label={item.label} title={!sidebarExpanded ? item.label : undefined} className={view === item.id ? "active" : ""} onClick={() => navigateTo(item.id)}><Icon>{item.icon}</Icon><span>{item.label}</span>{item.id === "audit" && auditRows.length > 0 && <i className="nav-count">{auditRows.length}</i>}</button>)}
         </nav>
-        <div className="sidebar-bottom"><button data-label="مركز المساعدة" title={!sidebarExpanded ? "مركز المساعدة" : undefined} onClick={() => navigateTo("settings")}><Icon>؟</Icon><span>مركز المساعدة</span></button><button data-label="تسجيل الخروج" title={!sidebarExpanded ? "تسجيل الخروج" : undefined} onClick={() => setSignedIn(false)}><Icon>↪</Icon><span>تسجيل الخروج</span></button><div className="secure-chip"><span>✓</span><p><b>بياناتك محمية</b><small>آخر مزامنة: الآن</small></p></div></div>
+        <div className="sidebar-bottom"><button data-label="مركز المساعدة" title={!sidebarExpanded ? "مركز المساعدة" : undefined} onClick={() => navigateTo("settings")}><Icon>؟</Icon><span>مركز المساعدة</span></button><button data-label="تسجيل الخروج" title={!sidebarExpanded ? "تسجيل الخروج" : undefined} onClick={() => { setSignedIn(false); window.history.pushState(null, "", "/"); }}><Icon>↪</Icon><span>تسجيل الخروج</span></button><div className="secure-chip"><span>✓</span><p><b>بياناتك محمية</b><small>آخر مزامنة: الآن</small></p></div></div>
       </aside>
       {sidebarExpanded && <button type="button" className="sidebar-scrim" aria-label="إغلاق القائمة" onClick={() => setSidebarExpanded(false)} />}
 

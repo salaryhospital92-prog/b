@@ -1113,3 +1113,10 @@ main { padding-top: 42px; }
   .ledger-table th.ledger-name, .ledger-table td.ledger-name { min-width: 130px; position: static; }
   .ledger-controls em { width: 100%; margin: 0; }
 }
+
+/* Hold the typing headline at its tallest so the phone layout never jumps */
+.login-feature-copy h1, .login-feature-copy p { display: grid; }
+.login-feature-copy h1 > *, .login-feature-copy p > * { grid-area: 1 / 1; }
+.type-sizer { display: grid; visibility: hidden; pointer-events: none; user-select: none; }
+.type-sizer > span { grid-area: 1 / 1; }
+.type-line { min-width: 0; }
