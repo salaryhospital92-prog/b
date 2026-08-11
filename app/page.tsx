@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { buildNewbornNames, getInitialPrice } from "../lib/rules-engine";
 import { getSupabaseBrowser } from "../lib/supabase-browser";
+import LoginLanding from "./login-landing";
 import ResidentWorkflow from "./resident-workflow";
 
 type Role = "doctor" | "chief" | "accounts" | "admin" | "developer";
@@ -21,16 +22,82 @@ type ReportData = {
 };
 type AccessRequestRecord = { id: number; fullName: string; email: string; provider: "email" | "google" | "apple"; requestedRole: string; specialty: string; status: string; requestedAt: string };
 type AccessDraft = { fullName: string; requestedRole: string; specialty: string };
+type DoctorDay = { id: number; day: string; date: string; status: string; amount: number; tone: "approved" | "pending" | "returned"; details: string };
+type DoctorProfile = {
+  firstName: string;
+  currentSalary: number;
+  previousSalary: number;
+  growth: number;
+  consultationAmount: number;
+  consultationCount: number;
+  procedureAmount: number;
+  operationCount: number;
+  inpatientCount: number;
+  bars: number[];
+  days: DoctorDay[];
+  insight: string;
+  highlight: string;
+  alertTitle: string;
+  alertBody: string;
+};
+type GlobalSearchResult = { id: string; kind: "account" | "patient" | "view"; label: string; meta: string; target: string };
+type BeforeInstallPromptEvent = Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: "accepted" | "dismissed" }> };
 
 const IQD = new Intl.NumberFormat("en-US");
 const money = (value: number) => `${IQD.format(value)} د.ع`;
 
-const recentDays = [
+const recentDays: DoctorDay[] = [
   { id: 1, day: "الأحد", date: "10 آب 2026", status: "معتمد", amount: 245000, tone: "approved", details: "8 استشاريات · ولادة طبيعية · 3 حالات رقود" },
   { id: 2, day: "السبت", date: "9 آب 2026", status: "تدشيك الراتب", amount: 190000, tone: "pending", details: "6 استشاريات · عملية قيصرية" },
   { id: 3, day: "الخميس", date: "7 آب 2026", status: "معتمد", amount: 220000, tone: "approved", details: "10 استشاريات · حالتا رقود" },
   { id: 4, day: "الأربعاء", date: "6 آب 2026", status: "أُعيد للمراجعة", amount: 125000, tone: "returned", details: "5 استشاريات · إثبات ناقص" },
 ];
+
+const doctorProfiles: Record<string, DoctorProfile> = {
+  "doctor-ahmed": {
+    firstName: "أحمد", currentSalary: 2845000, previousSalary: 2530000, growth: 12.4,
+    consultationAmount: 1040000, consultationCount: 104, procedureAmount: 1805000, operationCount: 18, inpatientCount: 24,
+    bars: [42, 56, 38, 68, 52, 76, 64, 86, 72, 92, 78, 96], days: recentDays,
+    insight: "أداؤك هذا الشهر أعلى من متوسط آخر 3 أشهر.", highlight: "أنت قريب من تحقيق أعلى راتب شهري لك.",
+    alertTitle: "تنبيه مهم", alertBody: "لديك يوم عمل أُعيد بسبب نقص صورة إثبات واحدة.",
+  },
+  "doctor-fanar": {
+    firstName: "فنار", currentSalary: 2310000, previousSalary: 2190000, growth: 5.5,
+    consultationAmount: 820000, consultationCount: 82, procedureAmount: 1490000, operationCount: 12, inpatientCount: 19,
+    bars: [58, 46, 62, 54, 70, 66, 74, 61, 78, 82, 76, 88],
+    days: [
+      { id: 11, day: "الأحد", date: "10 آب 2026", status: "معتمد", amount: 230000, tone: "approved", details: "7 استشاريات · ولادة طبيعية · حالتا رقود" },
+      { id: 12, day: "الجمعة", date: "8 آب 2026", status: "بانتظار التدقيق", amount: 160000, tone: "pending", details: "8 استشاريات · حالة خاصة موثقة" },
+      { id: 13, day: "الثلاثاء", date: "5 آب 2026", status: "معتمد", amount: 195000, tone: "approved", details: "5 استشاريات · قيصرية · 3 حالات رقود" },
+    ],
+    insight: "سجلاتك أكثر انتظامًا من الشهر الماضي.", highlight: "متوسط إكمال الإثباتات لديك بلغ 98%.",
+    alertTitle: "اعتراض مدقق", alertBody: "تم قبول اعتراضك الأخير وإضافة الفرق إلى كشف آب.",
+  },
+  "doctor-tabarak": {
+    firstName: "تبارك", currentSalary: 1980000, previousSalary: 1850000, growth: 7,
+    consultationAmount: 760000, consultationCount: 76, procedureAmount: 1220000, operationCount: 9, inpatientCount: 16,
+    bars: [36, 48, 44, 60, 57, 66, 63, 74, 69, 80, 77, 85],
+    days: [
+      { id: 21, day: "السبت", date: "9 آب 2026", status: "معتمد", amount: 205000, tone: "approved", details: "9 استشاريات · ولادتان طبيعيتان" },
+      { id: 22, day: "الأربعاء", date: "6 آب 2026", status: "بانتظار التدقيق", amount: 175000, tone: "pending", details: "6 استشاريات · قيصرية · حالة رقود" },
+      { id: 23, day: "الاثنين", date: "4 آب 2026", status: "معتمد", amount: 145000, tone: "approved", details: "4 استشاريات · 3 حالات رقود" },
+    ],
+    insight: "زمن إدخال سجلاتك تحسن بمقدار 18 دقيقة.", highlight: "جميع استشارياتك هذا الأسبوع مرفقة بالإثباتات.",
+    alertTitle: "حساب مكتمل", alertBody: "لا توجد لديك صور ناقصة أو أيام معادة للمراجعة.",
+  },
+  "doctor-shahd": {
+    firstName: "شهد", currentSalary: 2640000, previousSalary: 2380000, growth: 10.9,
+    consultationAmount: 920000, consultationCount: 92, procedureAmount: 1720000, operationCount: 15, inpatientCount: 22,
+    bars: [45, 52, 64, 59, 73, 68, 82, 77, 88, 84, 93, 97],
+    days: [
+      { id: 31, day: "الأحد", date: "10 آب 2026", status: "بانتظار التدقيق", amount: 235000, tone: "pending", details: "11 استشارية · قيصرية · حالتا رقود" },
+      { id: 32, day: "الخميس", date: "7 آب 2026", status: "معتمد", amount: 215000, tone: "approved", details: "8 استشاريات · ولادة طبيعية · حالتان خاصتان" },
+      { id: 33, day: "الثلاثاء", date: "5 آب 2026", status: "أُعيد للمراجعة", amount: 155000, tone: "returned", details: "7 استشاريات · تعديل وقت الكول مطلوب" },
+    ],
+    insight: "عدد الحالات التي تابعتها ارتفع هذا الشهر.", highlight: "أنت الأعلى في استلام المرضى عبر تسليم المناوبات.",
+    alertTitle: "يحتاج متابعة", alertBody: "عدّلي وقت كول يوم 5 آب ليعاد احتسابه تلقائيًا.",
+  },
+};
 
 const auditSeed = [
   { id: 1, doctor: "د. سارة محمود", avatar: "س", date: "10 آب 2026", procedures: "12 استشارية · 2 ولادة", entered: 285000, cap: 250000, over: true, wait: "منذ 18 دقيقة" },
@@ -62,8 +129,7 @@ function Icon({ children }: { children: string }) {
   return <span className="nav-icon" aria-hidden="true">{children}</span>;
 }
 
-function Sparkline() {
-  const bars = [42, 56, 38, 68, 52, 76, 64, 86, 72, 92, 78, 96];
+function Sparkline({ bars = [42, 56, 38, 68, 52, 76, 64, 86, 72, 92, 78, 96] }: { bars?: number[] }) {
   return (
     <div className="sparkline" aria-label="نمو الراتب خلال الشهر">
       {bars.map((height, index) => <span key={index} style={{ height: `${height}%` }} />)}
@@ -76,6 +142,7 @@ function StatusPill({ tone, children }: { tone: string; children: React.ReactNod
 }
 
 export default function Home() {
+  const [signedIn, setSignedIn] = useState(false);
   const [activeAccountId, setActiveAccountId] = useState("doctor-ahmed");
   const [view, setView] = useState<View>("overview");
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
@@ -84,6 +151,13 @@ export default function Home() {
   const [toast, setToast] = useState<Toast>(null);
   const [auditFilter, setAuditFilter] = useState("الكل");
   const [search, setSearch] = useState("");
+  const [globalSearch, setGlobalSearch] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | "unsupported">("default");
+  const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+  const [installGuide, setInstallGuide] = useState<"ios" | "android" | null>(null);
+  const [isInstalled, setIsInstalled] = useState(false);
   const [registryTab, setRegistryTab] = useState<"patient" | "employee">("patient");
   const [registrySaving, setRegistrySaving] = useState(false);
   const [registryLoading, setRegistryLoading] = useState(true);
@@ -112,6 +186,7 @@ export default function Home() {
 
   const currentRole = demoAccounts.find((item) => item.id === activeAccountId) || demoAccounts[0];
   const role = currentRole.role;
+  const doctorProfile = doctorProfiles[activeAccountId] || doctorProfiles["doctor-ahmed"];
   const newbornNames = buildNewbornNames(patientName, newbornCount);
 
   const navItems = useMemo(() => {
@@ -162,6 +237,23 @@ export default function Home() {
     ];
   }, [role]);
 
+  const globalSearchResults = useMemo<GlobalSearchResult[]>(() => {
+    const normalize = (value: string) => value.trim().toLocaleLowerCase("ar").replace(/[أإآ]/g, "ا").replace(/ى/g, "ي");
+    const query = normalize(globalSearch);
+    if (query.length < 2) return [];
+    const accountResults = demoAccounts
+      .filter((item) => normalize(`${item.name} ${item.label}`).includes(query))
+      .map((item) => ({ id: `account-${item.id}`, kind: "account" as const, label: item.name, meta: item.label, target: item.id }));
+    const patientResults = [...paymentSeed.map((item) => ({ fullName: item.patient, fileNumber: item.file })), ...registeredPatients]
+      .filter((item, index, list) => list.findIndex((candidate) => candidate.fileNumber === item.fileNumber) === index)
+      .filter((item) => normalize(`${item.fullName} ${item.fileNumber}`).includes(query))
+      .map((item) => ({ id: `patient-${item.fileNumber}`, kind: "patient" as const, label: item.fullName, meta: `ملف ${item.fileNumber}`, target: item.fullName }));
+    const viewResults = navItems
+      .filter((item) => normalize(item.label).includes(query))
+      .map((item) => ({ id: `view-${item.id}`, kind: "view" as const, label: item.label, meta: "قسم في النظام", target: item.id }));
+    return [...accountResults, ...patientResults, ...viewResults].slice(0, 8);
+  }, [globalSearch, navItems, registeredPatients]);
+
   useEffect(() => {
     if (view !== "registry") return;
     let active = true;
@@ -202,6 +294,34 @@ export default function Home() {
   useEffect(() => {
     const savedTheme = window.localStorage.getItem("albayati-theme");
     document.documentElement.dataset.theme = savedTheme === "dark" ? "dark" : "light";
+  }, []);
+
+  useEffect(() => {
+    const standaloneNavigator = navigator as Navigator & { standalone?: boolean };
+    const statusTimer = window.setTimeout(() => {
+      setIsInstalled(window.matchMedia("(display-mode: standalone)").matches || standaloneNavigator.standalone === true);
+      setNotificationPermission("Notification" in window ? Notification.permission : "unsupported");
+    }, 0);
+
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/sw.js").catch(() => undefined);
+    }
+
+    const captureInstallPrompt = (event: Event) => {
+      event.preventDefault();
+      setInstallPrompt(event as BeforeInstallPromptEvent);
+    };
+    const markInstalled = () => {
+      setIsInstalled(true);
+      setInstallPrompt(null);
+    };
+    window.addEventListener("beforeinstallprompt", captureInstallPrompt);
+    window.addEventListener("appinstalled", markInstalled);
+    return () => {
+      window.clearTimeout(statusTimer);
+      window.removeEventListener("beforeinstallprompt", captureInstallPrompt);
+      window.removeEventListener("appinstalled", markInstalled);
+    };
   }, []);
 
   useEffect(() => {
@@ -258,6 +378,17 @@ export default function Home() {
     setSidebarExpanded(false);
   }
 
+  function activateSearchResult(result: GlobalSearchResult) {
+    if (result.kind === "account") changeAccount(result.target);
+    if (result.kind === "patient") {
+      setSearch(result.target);
+      navigateTo("payments");
+    }
+    if (result.kind === "view") navigateTo(result.target as View);
+    setGlobalSearch("");
+    setSearchOpen(false);
+  }
+
   function navigateTo(nextView: View) {
     if (nextView === "reports") setReportLoading(true);
     if (nextView === "accessRequests") setAccessLoading(true);
@@ -274,6 +405,54 @@ export default function Home() {
     const nextTheme = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
     document.documentElement.dataset.theme = nextTheme;
     window.localStorage.setItem("albayati-theme", nextTheme);
+  }
+
+  async function installApp(platform: "ios" | "android") {
+    if (isInstalled) {
+      notify("تطبيق البياتي مثبت بالفعل على هذا الجهاز", "info");
+      return;
+    }
+    if (platform === "android" && installPrompt) {
+      try {
+        await installPrompt.prompt();
+        const choice = await installPrompt.userChoice;
+        if (choice.outcome === "accepted") {
+          setIsInstalled(true);
+          setInstallPrompt(null);
+          notify("تمت إضافة البياتي إلى جهازك بنجاح");
+        }
+      } catch {
+        setInstallGuide("android");
+      }
+      return;
+    }
+    setInstallGuide(platform);
+  }
+
+  async function enableNotifications() {
+    if (!("Notification" in window) || !("serviceWorker" in navigator)) {
+      setNotificationPermission("unsupported");
+      notify("هذا المتصفح لا يدعم إشعارات التطبيقات", "info");
+      return;
+    }
+    try {
+      const permission = await Notification.requestPermission();
+      setNotificationPermission(permission);
+      if (permission !== "granted") {
+        notify("يمكن تفعيل الإشعارات لاحقًا من إعدادات المتصفح", "info");
+        return;
+      }
+      const registration = await navigator.serviceWorker.ready;
+      await registration.showNotification("إشعارات البياتي مفعّلة", {
+        body: `ستصلك تنبيهات المناوبات والحسابات الخاصة بـ ${currentRole.name}.`,
+        icon: "/icons/icon-192.png",
+        badge: "/icons/favicon-32.png",
+        tag: "albayati-notifications-ready",
+      });
+      notify("تم تفعيل إشعارات البياتي لهذا الجهاز");
+    } catch {
+      notify("تعذر تفعيل الإشعارات الآن؛ تحقق من سماح المتصفح ثم حاول مجددًا", "info");
+    }
   }
 
   async function startAccessRequest(event: FormEvent<HTMLFormElement>) {
@@ -456,7 +635,7 @@ export default function Home() {
         <section className="welcome-row">
           <div>
             <p className="eyebrow">الثلاثاء، 11 آب 2026</p>
-            <h1>صباح الخير، د. أحمد</h1>
+            <h1>صباح الخير، د. {doctorProfile.firstName}</h1>
             <p className="muted">هذا ملخص عملك وحساباتك حتى الآن.</p>
           </div>
           <button className="primary-action" onClick={() => navigateTo("workLogs")}><b>＋</b> تسجيل يوم عمل</button>
@@ -467,25 +646,25 @@ export default function Home() {
             <div className="earnings-head">
               <div>
                 <span>راتب آب الحالي</span>
-                <strong>{money(2845000)}</strong>
+                <strong>{money(doctorProfile.currentSalary)}</strong>
               </div>
-              <span className="growth">↑ 12.4%</span>
+              <span className="growth">↑ {doctorProfile.growth}%</span>
             </div>
-            <Sparkline />
+            <Sparkline bars={doctorProfile.bars} />
             <div className="earnings-foot">
               <span>مقارنة بالشهر الماضي</span>
-              <b>{money(2530000)}</b>
+              <b>{money(doctorProfile.previousSalary)}</b>
             </div>
           </article>
 
           <div className="metric-stack">
             <article className="metric-card teal">
               <div className="metric-icon">⌁</div>
-              <div><span>الاستشاريات</span><strong>{money(1040000)}</strong><small>104 استشاريات معتمدة</small></div>
+              <div><span>الاستشاريات</span><strong>{money(doctorProfile.consultationAmount)}</strong><small>{IQD.format(doctorProfile.consultationCount)} استشارية معتمدة</small></div>
             </article>
             <article className="metric-card sand">
               <div className="metric-icon">✦</div>
-              <div><span>العمليات والرقود</span><strong>{money(1805000)}</strong><small>18 عملية · 24 حالة رقود</small></div>
+              <div><span>العمليات والرقود</span><strong>{money(doctorProfile.procedureAmount)}</strong><small>{IQD.format(doctorProfile.operationCount)} عملية · {IQD.format(doctorProfile.inpatientCount)} حالة رقود</small></div>
             </article>
           </div>
         </section>
@@ -497,7 +676,7 @@ export default function Home() {
               <button className="text-button" onClick={() => setView("days")}>عرض الكل ←</button>
             </div>
             <div className="day-list">
-              {recentDays.map((item) => (
+              {doctorProfile.days.map((item) => (
                 <button className="day-row" key={item.id} onClick={() => navigateTo("workLogs")}>
                   <span className="date-tile"><b>{item.date.split(" ")[0]}</b><small>آب</small></span>
                   <span className="day-copy"><b>{item.day}</b><small>{item.details}</small></span>
@@ -512,12 +691,12 @@ export default function Home() {
           <aside className="assistant-card">
             <div className="assistant-title"><span className="ai-orb">✦</span><div><b>مساعد البياتي</b><small>تحليل ذكي لحساباتك</small></div><i>مباشر</i></div>
             <div className="assistant-message">
-              <p>أداؤك هذا الشهر أعلى من متوسط آخر 3 أشهر.</p>
-              <strong>أنت قريب من تحقيق أعلى راتب شهري لك.</strong>
+              <p>{doctorProfile.insight}</p>
+              <strong>{doctorProfile.highlight}</strong>
             </div>
             <div className="smart-tip">
               <span>!</span>
-              <p><b>تنبيه مهم</b> لديك يوم عمل أُعيد بسبب نقص صورة إثبات واحدة.</p>
+              <p><b>{doctorProfile.alertTitle}</b> {doctorProfile.alertBody}</p>
             </div>
             <button className="assistant-link" onClick={() => navigateTo("workLogs")}>مراجعة اليوم الآن <span>←</span></button>
           </aside>
@@ -926,6 +1105,37 @@ export default function Home() {
     return renderDoctorDashboard();
   }
 
+  const installGuideModal = installGuide && <div className="modal-backdrop install-guide-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setInstallGuide(null)}>
+    <section className="install-guide" role="dialog" aria-modal="true" aria-label={`طريقة تثبيت البياتي على ${installGuide === "ios" ? "iPhone" : "Android"}`}>
+      <button className="close-button" type="button" aria-label="إغلاق" onClick={() => setInstallGuide(null)}>×</button>
+      <span className="install-guide-logo" role="img" aria-label="شعار البياتي" />
+      <p className="eyebrow">تثبيت آمن من المتصفح</p>
+      <h2>أضف البياتي إلى {installGuide === "ios" ? "iPhone" : "Android"}</h2>
+      {installGuide === "ios" ? <ol><li><b>افتح الموقع في Safari</b><small>تأكد أنك تستخدم Safari وليس المتصفح داخل تطبيق آخر.</small></li><li><b>اضغط زر المشاركة</b><small>رمز المربع والسهم في شريط Safari.</small></li><li><b>اختر «إضافة إلى الشاشة الرئيسية»</b><small>ثم اضغط «إضافة» ليظهر شعار البياتي كتطبيق.</small></li></ol> : <ol><li><b>افتح الموقع في Chrome</b><small>من هاتف Android.</small></li><li><b>افتح قائمة ⋮</b><small>في أعلى المتصفح.</small></li><li><b>اختر «تثبيت التطبيق»</b><small>أو «إضافة إلى الشاشة الرئيسية» ثم وافق على التثبيت.</small></li></ol>}
+      <p className="install-guide-note">بعد التثبيت افتح التطبيق وفعّل الإشعارات من زر الجرس لتصلك تنبيهات المناوبات.</p>
+      <button className="primary-action" type="button" onClick={() => setInstallGuide(null)}>فهمت الطريقة</button>
+    </section>
+  </div>;
+
+  if (!signedIn) {
+    return <>
+      <LoginLanding
+        accounts={demoAccounts}
+        selectedId={activeAccountId}
+        isInstalled={isInstalled}
+        notificationPermission={notificationPermission}
+        onSelect={changeAccount}
+        onLogin={() => setSignedIn(true)}
+        onRequestAccount={() => { setSignedIn(true); setAccessOpen(true); }}
+        onInstall={installApp}
+        onEnableNotifications={enableNotifications}
+        onToggleTheme={toggleTheme}
+      />
+      {installGuideModal}
+      {toast && <div className={`toast ${toast.kind}`}><span>{toast.kind === "success" ? "✓" : "i"}</span>{toast.message}</div>}
+    </>;
+  }
+
   return (
     <div className={`app-shell ${sidebarExpanded ? "sidebar-open" : "sidebar-collapsed"}`}>
       <aside className="sidebar" aria-label="القائمة الجانبية">
@@ -935,15 +1145,15 @@ export default function Home() {
           <p>القائمة الرئيسية</p>
           {navItems.map((item) => <button key={item.id} data-label={item.label} title={!sidebarExpanded ? item.label : undefined} className={view === item.id ? "active" : ""} onClick={() => navigateTo(item.id)}><Icon>{item.icon}</Icon><span>{item.label}</span>{item.id === "audit" && auditRows.length > 0 && <i className="nav-count">{auditRows.length}</i>}</button>)}
         </nav>
-        <div className="sidebar-bottom"><button data-label="مركز المساعدة" title={!sidebarExpanded ? "مركز المساعدة" : undefined} onClick={() => navigateTo("settings")}><Icon>؟</Icon><span>مركز المساعدة</span></button><div className="secure-chip"><span>✓</span><p><b>بياناتك محمية</b><small>آخر مزامنة: الآن</small></p></div></div>
+        <div className="sidebar-bottom"><button data-label="مركز المساعدة" title={!sidebarExpanded ? "مركز المساعدة" : undefined} onClick={() => navigateTo("settings")}><Icon>؟</Icon><span>مركز المساعدة</span></button><button data-label="تسجيل الخروج" title={!sidebarExpanded ? "تسجيل الخروج" : undefined} onClick={() => setSignedIn(false)}><Icon>↪</Icon><span>تسجيل الخروج</span></button><div className="secure-chip"><span>✓</span><p><b>بياناتك محمية</b><small>آخر مزامنة: الآن</small></p></div></div>
       </aside>
       {sidebarExpanded && <button type="button" className="sidebar-scrim" aria-label="إغلاق القائمة" onClick={() => setSidebarExpanded(false)} />}
 
       <div className="main-column">
         <header className="topbar">
           <div className="mobile-brand"><button type="button" className="menu-trigger" aria-label="إظهار القائمة الجانبية" onClick={() => setSidebarExpanded(true)}>☰</button><span className="brand-mark" role="img" aria-label="شعار نظام البياتي" /><b>البياتي</b></div>
-          <label className="global-search"><span>⌕</span><input aria-label="البحث في النظام" placeholder="ابحث عن مريض، طبيب أو يوم عمل..." /></label>
-          <div className="top-actions"><span className="demo-chip">وضع تجريبي</span><button className="account-request-button" onClick={() => setAccessOpen(true)}>طلب حساب</button><button className="theme-button" aria-label="تبديل الوضع الليلي والنهاري" title="ليلي / نهاري" onClick={toggleTheme}><span className="theme-sun">☀</span><span className="theme-moon">☾</span></button><button className="icon-button" aria-label="الإشعارات"><span>♢</span><i /></button><span className="divider" /><div className="role-picker"><span className="user-avatar">{currentRole.name.replace("د. ", "")[0] || "ب"}</span><div><b>{currentRole.name}</b><small>{currentRole.label}</small></div><select aria-label="تبديل الحساب التجريبي" value={activeAccountId} onChange={(event) => changeAccount(event.target.value)}>{demoAccounts.map((item) => <option key={item.id} value={item.id}>{item.name} — {item.label}</option>)}</select></div></div>
+          <label className="global-search"><span aria-hidden="true">⌕</span><input aria-label="البحث في النظام" value={globalSearch} onChange={(event) => { setGlobalSearch(event.target.value); setSearchOpen(true); }} onFocus={() => setSearchOpen(true)} onBlur={() => window.setTimeout(() => setSearchOpen(false), 150)} onKeyDown={(event) => { if (event.key === "Enter" && globalSearchResults[0]) activateSearchResult(globalSearchResults[0]); if (event.key === "Escape") setSearchOpen(false); }} placeholder="ابحث بالاسم أو رقم الملف أو القسم..." />{searchOpen && globalSearch.trim().length >= 2 && <div className="global-search-results" role="listbox">{globalSearchResults.length ? globalSearchResults.map((result) => <button type="button" role="option" aria-selected="false" key={result.id} onMouseDown={(event) => event.preventDefault()} onClick={() => activateSearchResult(result)}><span>{result.kind === "account" ? "ط" : result.kind === "patient" ? "م" : "←"}</span><p><b>{result.label}</b><small>{result.meta}</small></p></button>) : <p className="search-empty"><b>لا توجد نتيجة مطابقة</b><small>جرّب الاسم الكامل أو رقم الملف.</small></p>}</div>}</label>
+          <div className="top-actions"><span className="demo-chip">وضع تجريبي</span><button className="account-request-button" onClick={() => setAccessOpen(true)}>طلب حساب</button><button className="theme-button" aria-label="تبديل الوضع الليلي والنهاري" title="الوضع الليلي / النهاري" onClick={toggleTheme}><span className="theme-sun">☀</span><span className="theme-moon">☾</span></button><div className="notification-wrap"><button className="icon-button notification-button" aria-label="مركز الإشعارات" title="مركز الإشعارات" aria-expanded={notificationsOpen} onClick={() => setNotificationsOpen((open) => !open)}><span aria-hidden="true">🔔</span><i /></button>{notificationsOpen && <section className="notifications-panel"><div><b>مركز الإشعارات</b><small>{notificationPermission === "granted" ? "إشعارات الجهاز مفعّلة" : "تحتاج تفعيل إشعارات الجهاز"}</small></div><article><span>⇄</span><p><b>تسليم المناوبة</b><small>قائمة المرضى المستلمين جاهزة للمتابعة.</small></p></article><article><span>✓</span><p><b>آخر مزامنة مكتملة</b><small>تم حفظ تغييرات {currentRole.name} مع سجل المنفذ.</small></p></article>{notificationPermission !== "granted" && <button onClick={enableNotifications} disabled={notificationPermission === "unsupported"}>تفعيل إشعارات الجهاز</button>}</section>}</div><span className="divider" /><div className="role-picker"><span className="user-avatar">{currentRole.name.replace("د. ", "")[0] || "ب"}</span><div><b>{currentRole.name}</b><small>{currentRole.label}</small></div><select aria-label="تبديل الحساب التجريبي" value={activeAccountId} onChange={(event) => changeAccount(event.target.value)}>{demoAccounts.map((item) => <option key={item.id} value={item.id}>{item.name} — {item.label}</option>)}</select></div></div>
         </header>
         <main>{renderContent()}</main>
         <nav className="mobile-nav" aria-label="قائمة الهاتف">{navItems.slice(0, 4).map((item) => <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => navigateTo(item.id)}><Icon>{item.icon}</Icon><small>{item.label.split(" ")[0]}</small></button>)}</nav>
@@ -961,6 +1171,7 @@ export default function Home() {
         <div className="oauth-actions"><button name="provider" value="email" disabled={accessSaving}><span>@</span> المتابعة عبر البريد الإلكتروني</button><button name="provider" value="google" disabled={accessSaving}><span>G</span> المتابعة عبر Google</button><button name="provider" value="apple" disabled={accessSaving}><span>●</span> المتابعة عبر Apple</button></div>
         <p className="access-footnote">لن يُفعّل الحساب بعد التحقق مباشرة؛ يبقى بحالة «بانتظار الموافقة» حتى يعتمد رئيس المقيمين الطلب.</p>
       </form></div>}
+      {installGuideModal}
       {toast && <div className={`toast ${toast.kind}`}><span>{toast.kind === "success" ? "✓" : "i"}</span>{toast.message}</div>}
     </div>
   );

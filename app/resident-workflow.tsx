@@ -120,6 +120,7 @@ export default function ResidentWorkflow({ role, accountName, mode = "logs" }: {
 
   const visibleLogs = useMemo(() => {
     if (mode === "objections" && role === "doctor") return logs.filter((log) => log.doctorName === accountName);
+    if (role === "doctor") return logs.filter((log) => log.doctorName === accountName || log.lastEditorName === accountName || log.revisions.some((revision) => revision.editorName === accountName));
     return logs;
   }, [logs, mode, role, accountName]);
   const objections = visibleLogs.flatMap((log) => log.objections.map((item) => ({ ...item, log })));

@@ -14,7 +14,7 @@ async function render() {
   );
 }
 
-test("server-renders the Arabic hospital dashboard", async () => {
+test("server-renders the Arabic hospital entry experience", async () => {
   const response = await render();
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
@@ -22,8 +22,9 @@ test("server-renders the Arabic hospital dashboard", async () => {
   const html = await response.text();
   assert.match(html, /<html lang="ar" dir="rtl">/);
   assert.match(html, /نظام البياتي الطبي الذكي/);
-  assert.match(html, /لوحة|الرئيسية/);
-  assert.match(html, /class="mobile-nav"/);
+  assert.match(html, /تسجيل الدخول/);
+  assert.match(html, /حساب شخصي لا يختلط بغيره/);
+  assert.match(html, /class="login-page"/);
   assert.match(html, /manifest\.webmanifest/);
   assert.match(html, /apple-touch-icon\.png/);
 });
@@ -76,6 +77,10 @@ test("keeps Supabase credentials server-side and covers responsive screens", asy
   assert.match(page, /التقارير اليومية والأسبوعية والشهرية/);
   assert.match(page, /المتابعة عبر Google/);
   assert.match(page, /doctor-fanar/);
+  assert.match(page, /"doctor-tabarak"[\s\S]*firstName:\s*"تبارك"/);
+  assert.match(page, /doctorProfiles\[activeAccountId\]/);
+  assert.match(page, /globalSearchResults/);
+  assert.match(page, /مركز الإشعارات/);
   assert.match(page, /developer-system/);
   assert.match(page, /brand-mark/);
   assert.match(page, /sidebarExpanded \? "→" : "←"/);
@@ -108,17 +113,24 @@ test("keeps Supabase credentials server-side and covers responsive screens", asy
   assert.match(residentMigration, /last_edited_by_name/);
 });
 
-test("ships installable PWA icon metadata", async () => {
-  const [manifest, layout] = await Promise.all([
+test("ships installable PWA icon metadata and notification worker", async () => {
+  const [manifest, layout, worker, loginLanding] = await Promise.all([
     readFile(new URL("../app/manifest.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../public/sw.js", import.meta.url), "utf8"),
+    readFile(new URL("../app/login-landing.tsx", import.meta.url), "utf8"),
   ]);
 
   assert.match(manifest, /display:\s*"standalone"/);
   assert.match(manifest, /icon-maskable-512\.png/);
-  assert.match(manifest, /theme_color:\s*"#113b39"/);
+  assert.match(manifest, /theme_color:\s*"#0b5144"/);
   assert.match(layout, /appleWebApp/);
-  assert.match(layout, /themeColor:\s*"#113b39"/);
+  assert.match(layout, /themeColor:\s*"#0b5144"/);
+  assert.match(worker, /addEventListener\("push"/);
+  assert.match(worker, /addEventListener\("notificationclick"/);
+  assert.match(worker, /url\.pathname\.startsWith\("\/api\/"\)/);
+  assert.match(loginLanding, /beforeinstallprompt|onInstall/);
+  assert.match(loginLanding, /iPhone/);
 });
 
 test("prepares Netlify without allowing an automatic release", async () => {
