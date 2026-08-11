@@ -1,6 +1,7 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useMemo, useState } from "react";
+import { useRemoteData } from "../lib/use-remote-data";
 import { planMonth } from "../lib/shift-planner";
 import { rosterImageBlob } from "../lib/roster-image";
 
@@ -117,42 +118,33 @@ function RosterBoard({ month, doctors, assignments, domId, onChangeCell, busy, r
 export default function ShiftSchedule({ accountName, notify }: { accountName: string; notify: (message: string, kind?: "success" | "info") => void }) {
   const months = useMemo(() => monthOptions(), []);
   const [monthKey, setMonthKey] = useState(months[1]?.key || months[0].key);
-  const [data, setData] = useState<ShiftsData | null>(null);
-  const [refreshKey, setRefreshKey] = useState(0);
   const [saving, setSaving] = useState(false);
-  const [selectedDays, setSelectedDays] = useState<number[]>([]);
-  const [preferredShift, setPreferredShift] = useState("كلاهما");
-  const [maxShifts, setMaxShifts] = useState("");
+  // null means "untouched this visit", so the saved answer shows through without
+  // an effect copying server state into form state.
+  const [dayDraft, setDayDraft] = useState<number[] | null>(null);
+  const [shiftDraft, setShiftDraft] = useState<string | null>(null);
+  const [maxDraft, setMaxDraft] = useState<string | null>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
   const [shareLinks, setShareLinks] = useState<ShareLink[]>([]);
   const [whatsappText, setWhatsappText] = useState("");
   const [demo, setDemo] = useState<Assignment[] | null>(null);
   const [sharing, setSharing] = useState(false);
 
-  // Kept in a ref so a fresh notify() identity each render never re-triggers the fetch.
-  const notifyRef = useRef(notify);
-  useEffect(() => { notifyRef.current = notify; });
+  const { data, error, loading, reload: load } = useRemoteData<ShiftsData>(
+    `/api/shifts?month=${monthKey}&actorName=${encodeURIComponent(accountName)}`,
+    "تعذر تحميل الجدول",
+  );
 
-  const load = () => setRefreshKey((key) => key + 1);
+  const saved = data?.me.availability ?? null;
+  const selectedDays = dayDraft ?? saved?.available_days ?? [];
+  const preferredShift = shiftDraft ?? saved?.preferred_shift ?? "كلاهما";
+  const maxShifts = maxDraft ?? (saved?.max_shifts ? String(saved.max_shifts) : "");
 
-  useEffect(() => {
-    let active = true;
-    (async () => {
-      try {
-        const response = await fetch(`/api/shifts?month=${monthKey}&actorName=${encodeURIComponent(accountName)}`, { cache: "no-store" });
-        const payload = await response.json();
-        if (!active) return;
-        if (!response.ok) throw new Error(payload.error || "تعذر تحميل الجدول");
-        setData(payload);
-        setSelectedDays(payload.me.availability?.available_days ?? []);
-        setPreferredShift(payload.me.availability?.preferred_shift ?? "كلاهما");
-        setMaxShifts(payload.me.availability?.max_shifts ? String(payload.me.availability.max_shifts) : "");
-      } catch (error) {
-        if (active) notifyRef.current(error instanceof Error ? error.message : "تعذر تحميل الجدول", "info");
-      }
-    })();
-    return () => { active = false; };
-  }, [monthKey, accountName, refreshKey]);
+  function resetDrafts() {
+    setDayDraft(null);
+    setShiftDraft(null);
+    setMaxDraft(null);
+  }
 
   async function submitAvailability(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -167,6 +159,7 @@ export default function ShiftSchedule({ accountName, notify }: { accountName: st
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "تعذر الإرسال");
       notify(payload.message);
+      resetDrafts();
       load();
     } catch (error) {
       notify(error instanceof Error ? error.message : "تعذر الإرسال", "info");
@@ -293,7 +286,9 @@ export default function ShiftSchedule({ accountName, notify }: { accountName: st
   }
 
   function toggleDay(day: number) {
-    setSelectedDays((days) => days.includes(day) ? days.filter((value) => value !== day) : [...days, day].sort((a, b) => a - b));
+    setDayDraft(selectedDays.includes(day)
+      ? selectedDays.filter((value) => value !== day)
+      : [...selectedDays, day].sort((a, b) => a - b));
   }
 
   function changeCell(day: number, shift: ShiftName, employeeId: number) {
@@ -303,7 +298,12 @@ export default function ShiftSchedule({ accountName, notify }: { accountName: st
     saveEdits(next.sort((left, right) => left.day - right.day));
   }
 
-  if (!data) return <section className="panel"><header className="panel-head"><div><h2>جدول المناوبات</h2><p>جارٍ التحميل...</p></div></header></section>;
+  if (!data) return (
+    <section className="panel">
+      <header className="panel-head"><div><h2>جدول المناوبات</h2><p>{loading ? "جارٍ التحميل..." : error || "تعذر تحميل الجدول"}</p></div></header>
+      {!loading && <div className="load-failed"><p>{error}</p><button type="button" className="primary-action" onClick={load}>إعادة المحاولة<span>↻</span></button></div>}
+    </section>
+  );
 
   const { month, canManage, me, doctors, availability, assignments } = data;
   const allDays = Array.from({ length: month.days }, (_, index) => index + 1);
@@ -316,7 +316,7 @@ export default function ShiftSchedule({ accountName, notify }: { accountName: st
           <p>كل مقيم يحدد أيام تفرغه، والنظام يوزّع المناوبات صباحية ومسائية بعدالة ثم يرسلها.</p>
         </div>
         <label className="shift-month-picker"><span>الشهر</span>
-          <select value={monthKey} onChange={(event) => { setData(null); setMonthKey(event.target.value); setWarnings([]); setShareLinks([]); setWhatsappText(""); }}>
+          <select value={monthKey} onChange={(event) => { setMonthKey(event.target.value); resetDrafts(); setWarnings([]); setShareLinks([]); setWhatsappText(""); setDemo(null); }}>
             {months.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}
           </select>
         </label>
@@ -343,19 +343,19 @@ export default function ShiftSchedule({ accountName, notify }: { accountName: st
           </div>
 
           <div className="shift-quick-picks">
-            <button type="button" onClick={() => setSelectedDays(allDays)}>كل الأيام</button>
-            <button type="button" onClick={() => setSelectedDays(allDays.filter((day) => ![5, 6].includes(new Date(Date.UTC(month.year, month.monthNumber - 1, day)).getUTCDay())))}>أيام العمل فقط</button>
-            <button type="button" onClick={() => setSelectedDays([])}>مسح الاختيار</button>
+            <button type="button" onClick={() => setDayDraft(allDays)}>كل الأيام</button>
+            <button type="button" onClick={() => setDayDraft(allDays.filter((day) => ![5, 6].includes(new Date(Date.UTC(month.year, month.monthNumber - 1, day)).getUTCDay())))}>أيام العمل فقط</button>
+            <button type="button" onClick={() => setDayDraft([])}>مسح الاختيار</button>
             <span>{selectedDays.length} يوم محدد</span>
           </div>
 
           <div className="registry-fields">
             <label className="form-field"><span>المناوبة المفضلة</span>
-              <select value={preferredShift} onChange={(event) => setPreferredShift(event.target.value)} disabled={month.status === "منشور"}>
+              <select value={preferredShift} onChange={(event) => setShiftDraft(event.target.value)} disabled={month.status === "منشور"}>
                 <option>كلاهما</option><option>صباحية</option><option>مسائية</option>
               </select></label>
             <label className="form-field"><span>أقصى عدد مناوبات (اختياري)</span>
-              <input type="number" min="1" max="31" value={maxShifts} placeholder="بدون حد" disabled={month.status === "منشور"} onChange={(event) => setMaxShifts(event.target.value)} /></label>
+              <input type="number" min="1" max="31" value={maxShifts} placeholder="بدون حد" disabled={month.status === "منشور"} onChange={(event) => setMaxDraft(event.target.value)} /></label>
             <label className="form-field full"><span>ملاحظة لرئيس المقيمين</span>
               <textarea name="note" rows={2} defaultValue={me.availability?.note || ""} placeholder="ظرف خاص، امتحان، سفر..." disabled={month.status === "منشور"} /></label>
           </div>

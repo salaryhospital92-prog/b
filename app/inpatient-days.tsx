@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { DAY_PAYMENT_STATES, type DayPaymentState } from "../lib/rules-engine";
+import { useRemoteData } from "../lib/use-remote-data";
 
 type DayCell = { date: string; billable: boolean; status: DayPaymentState | null };
 type PatientStay = {
@@ -44,29 +45,13 @@ export default function InpatientDays({ accountName, role, notify }: {
   role: string;
   notify: (message: string, kind?: "success" | "info") => void;
 }) {
-  const [data, setData] = useState<LedgerData | null>(null);
-  const [refreshKey, setRefreshKey] = useState(0);
   const [busyCell, setBusyCell] = useState("");
   const [onlyPremature, setOnlyPremature] = useState(false);
 
-  const notifyRef = useRef(notify);
-  useEffect(() => { notifyRef.current = notify; });
-
-  useEffect(() => {
-    let active = true;
-    (async () => {
-      try {
-        const response = await fetch(`/api/inpatient-days?actorName=${encodeURIComponent(accountName)}`, { cache: "no-store" });
-        const payload = await response.json();
-        if (!active) return;
-        if (!response.ok) throw new Error(payload.error || "تعذر تحميل أيام الرقود");
-        setData(payload);
-      } catch (error) {
-        if (active) notifyRef.current(error instanceof Error ? error.message : "تعذر تحميل أيام الرقود", "info");
-      }
-    })();
-    return () => { active = false; };
-  }, [accountName, refreshKey]);
+  const { data, error, loading, reload } = useRemoteData<LedgerData>(
+    `/api/inpatient-days?actorName=${encodeURIComponent(accountName)}`,
+    "تعذر تحميل أيام الرقود",
+  );
 
   async function cycleDay(patient: PatientStay, cell: DayCell) {
     if (!data?.canEdit || !cell.billable) return;
@@ -86,7 +71,7 @@ export default function InpatientDays({ accountName, role, notify }: {
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "تعذر التحديث");
-      setRefreshKey((value) => value + 1);
+      reload();
     } catch (error) {
       notify(error instanceof Error ? error.message : "تعذر التحديث", "info");
     } finally {
@@ -105,13 +90,18 @@ export default function InpatientDays({ accountName, role, notify }: {
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "تعذر التحديث");
       notify(payload.message);
-      setRefreshKey((value) => value + 1);
+      reload();
     } catch (error) {
       notify(error instanceof Error ? error.message : "تعذر التحديث", "info");
     }
   }
 
-  if (!data) return <section className="panel"><header className="panel-head"><div><h2>أيام الرقود والدفع</h2><p>جارٍ التحميل...</p></div></header></section>;
+  if (!data) return (
+    <section className="panel">
+      <header className="panel-head"><div><h2>أيام الرقود والدفع</h2><p>{loading ? "جارٍ التحميل..." : error || "تعذر تحميل أيام الرقود"}</p></div></header>
+      {!loading && <div className="load-failed"><p>{error}</p><button type="button" className="primary-action" onClick={reload}>إعادة المحاولة<span>↻</span></button></div>}
+    </section>
+  );
 
   const rows = onlyPremature ? data.premature : data.patients;
   const isDoctor = role === "doctor" || role === "chief";

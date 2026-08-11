@@ -16,7 +16,9 @@
     "test": "npm run build && node --test tests/rendered-html.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate",
-    "telegram:webhook": "node --env-file=.env.local scripts/register-telegram-webhook.mjs"
+    "telegram:webhook": "node --env-file=.env.local scripts/register-telegram-webhook.mjs",
+    "verify": "node scripts/verify-deploy.mjs",
+    "ship": "cross-env-shell \"COMMIT_REF=$(git rev-parse HEAD) netlify deploy --build --prod && EXPECT_COMMIT=$(git rev-parse HEAD) npm run verify\""
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.2",
