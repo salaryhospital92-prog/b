@@ -7,7 +7,7 @@ import LoginLanding from "./login-landing";
 import ResidentWorkflow from "./resident-workflow";
 
 type Role = "doctor" | "chief" | "accounts" | "admin" | "developer";
-type View = "overview" | "handover" | "days" | "workLogs" | "objections" | "audit" | "payments" | "reports" | "settings" | "registry" | "personalSalary" | "capabilities" | "accessRequests";
+type View = "overview" | "handover" | "days" | "workLogs" | "objections" | "audit" | "payments" | "reports" | "settings" | "registry" | "personalSalary" | "capabilities" | "accessRequests" | "attendance";
 type Toast = { message: string; kind: "success" | "info" } | null;
 type PatientRecord = { id: number; fullName: string; fileNumber: string; department: string; admissionDate: string; paymentCategory: string; entryType: string; patientStatus: string; billingMode: string; attendingDoctor?: string | null; isNewborn?: boolean; newbornCount?: number };
 type EmployeeRecord = { id: number; fullName: string; employeeNumber: string; role: string; specialty: string; status: string };
@@ -42,6 +42,12 @@ type DoctorProfile = {
 };
 type GlobalSearchResult = { id: string; kind: "account" | "patient" | "view"; label: string; meta: string; target: string };
 type BeforeInstallPromptEvent = Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: "accepted" | "dismissed" }> };
+type PresenceRecord = { employeeId: number; fullName: string; role: string; specialty: string; isPresent: boolean; attendanceSessionId?: number | null; clockInAt?: string | null; clockInSource?: string | null; lastActivityType?: string | null; lastActivity?: string | null; lastActivitySource?: string | null; lastActivityAt?: string | null; telegramStatus?: string | null; telegramUsername?: string | null; telegramLastSeenAt?: string | null };
+type AttendanceSession = { id: number; employeeId: number; employeeName: string; clockInAt: string; clockOutAt?: string | null; clockInSource: string; clockOutSource?: string | null };
+type OperationalTask = { id: number; title: string; status: string; priority: string; dueAt?: string | null; assigneeName: string };
+type AttendanceData = { summary: { present: number; total: number; arrivalsToday: number; activeLast15Minutes: number; openTasks: number }; presence: PresenceRecord[]; sessions: AttendanceSession[]; tasks: OperationalTask[] };
+type TelegramStatusData = { botUsername: string; configuration: { tokenConfigured: boolean; secretConfigured: boolean; publicUrlConfigured: boolean; webhookReady: boolean }; linkedAccounts: { id: number; employeeId: number; employeeName: string; employeeRole: string; username?: string | null; status: string; pairedAt: string; lastSeenAt: string }[]; recentUpdates: { updateId: number; employeeName?: string | null; command?: string | null; status: string; error?: string | null; receivedAt: string; processedAt?: string | null }[]; openTasks: number };
+type TelegramLink = { code: string; employeeName: string; expiresAt: string; deepLink: string } | null;
 
 const IQD = new Intl.NumberFormat("en-US");
 const money = (value: number) => `${IQD.format(value)} د.ع`;
@@ -184,6 +190,12 @@ export default function Home() {
   const [accessSaving, setAccessSaving] = useState(false);
   const [accessRequests, setAccessRequests] = useState<AccessRequestRecord[]>([]);
   const [accessLoading, setAccessLoading] = useState(true);
+  const [attendanceData, setAttendanceData] = useState<AttendanceData | null>(null);
+  const [attendanceLoading, setAttendanceLoading] = useState(true);
+  const [attendanceSaving, setAttendanceSaving] = useState<number | null>(null);
+  const [attendanceFilter, setAttendanceFilter] = useState("");
+  const [telegramStatus, setTelegramStatus] = useState<TelegramStatusData | null>(null);
+  const [telegramLink, setTelegramLink] = useState<TelegramLink>(null);
 
   const currentRole = demoAccounts.find((item) => item.id === activeAccountId) || demoAccounts[0];
   const role = currentRole.role;
@@ -222,6 +234,7 @@ export default function Home() {
     ];
     if (role === "admin") return [
       { id: "overview" as View, label: "لوحة القيادة", icon: "⌂" },
+      { id: "attendance" as View, label: "الحضور والنشاط", icon: "◉" },
       { id: "registry" as View, label: "مركز التسجيل", icon: "✚" },
       { id: "workLogs" as View, label: "سجلات المناوبات", icon: "▤" },
       { id: "reports" as View, label: "التقارير الشاملة", icon: "▥" },
@@ -231,6 +244,7 @@ export default function Home() {
     ];
     return [
       { id: "overview" as View, label: "حالة النظام", icon: "⌂" },
+      { id: "attendance" as View, label: "الحضور وبوت البياتي", icon: "◉" },
       { id: "workLogs" as View, label: "سجل التعديلات", icon: "▤" },
       { id: "reports" as View, label: "مراقبة التقارير", icon: "▥" },
       { id: "settings" as View, label: "إعدادات النظام", icon: "⚙" },
@@ -354,6 +368,30 @@ export default function Home() {
   }, [view, role]);
 
   useEffect(() => {
+    if (view !== "attendance" || !["admin", "developer"].includes(role)) return;
+    let active = true;
+    const actorQuery = `?actorName=${encodeURIComponent(currentRole.name)}`;
+    Promise.all([
+      fetch(`/api/attendance${actorQuery}`, { cache: "no-store" }).then(async (response) => {
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "تعذر تحميل سجل الحضور");
+        return data as AttendanceData;
+      }),
+      fetch(`/api/telegram/status${actorQuery}`, { cache: "no-store" }).then(async (response) => {
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "تعذر تحميل حالة البوت");
+        return data as TelegramStatusData;
+      }),
+    ]).then(([attendance, bot]) => {
+      if (!active) return;
+      setAttendanceData(attendance);
+      setTelegramStatus(bot);
+    }).catch((error) => active && notify(error instanceof Error ? error.message : "تعذر تحميل مركز العمليات", "info"))
+      .finally(() => active && setAttendanceLoading(false));
+    return () => { active = false; };
+  }, [view, role, currentRole.name]);
+
+  useEffect(() => {
     let active = true;
     getSupabaseBrowser().then(async (supabase) => {
       const { data } = await supabase.auth.getSession();
@@ -393,6 +431,7 @@ export default function Home() {
   function navigateTo(nextView: View) {
     if (nextView === "reports") setReportLoading(true);
     if (nextView === "accessRequests") setAccessLoading(true);
+    if (nextView === "attendance") setAttendanceLoading(true);
     setView(nextView);
     setSidebarExpanded(false);
   }
@@ -535,6 +574,76 @@ export default function Home() {
     }
   }
 
+  async function refreshOperations() {
+    setAttendanceLoading(true);
+    try {
+      const [attendanceResponse, telegramResponse] = await Promise.all([
+        fetch(`/api/attendance?actorName=${encodeURIComponent(currentRole.name)}`, { cache: "no-store" }),
+        fetch(`/api/telegram/status?actorName=${encodeURIComponent(currentRole.name)}`, { cache: "no-store" }),
+      ]);
+      const [attendance, bot] = await Promise.all([attendanceResponse.json(), telegramResponse.json()]);
+      if (!attendanceResponse.ok) throw new Error(attendance.error || "تعذر تحميل سجل الحضور");
+      if (!telegramResponse.ok) throw new Error(bot.error || "تعذر تحميل حالة البوت");
+      setAttendanceData(attendance);
+      setTelegramStatus(bot);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "تعذر تحديث مركز العمليات", "info");
+    } finally {
+      setAttendanceLoading(false);
+    }
+  }
+
+  async function toggleEmployeeAttendance(employee: PresenceRecord) {
+    setAttendanceSaving(employee.employeeId);
+    try {
+      const response = await fetch("/api/attendance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: employee.isPresent ? "clock_out" : "clock_in",
+          employeeName: employee.fullName,
+          actorName: currentRole.name,
+          source: "admin",
+          note: `سُجّل من لوحة الإدارة بواسطة ${currentRole.name}`,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "تعذر تحديث الحضور");
+      setAttendanceData(data);
+      notify(employee.isPresent ? `تم تسجيل انصراف ${employee.fullName}` : `تم تسجيل حضور ${employee.fullName}`);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "تعذر تحديث الحضور", "info");
+    } finally {
+      setAttendanceSaving(null);
+    }
+  }
+
+  async function createTelegramLink(employee: PresenceRecord) {
+    try {
+      const response = await fetch("/api/telegram/link-code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ employeeId: employee.employeeId, actorName: currentRole.name }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "تعذر إنشاء رمز الربط");
+      setTelegramLink(data);
+      notify(`تم إنشاء رمز مؤقت لربط ${employee.fullName}`);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "تعذر إنشاء رمز الربط", "info");
+    }
+  }
+
+  async function copyTelegramLink() {
+    if (!telegramLink) return;
+    try {
+      await navigator.clipboard.writeText(`${telegramLink.deepLink}\nرمز الربط: ${telegramLink.code}`);
+      notify("تم نسخ رابط Telegram ورمز الربط");
+    } catch {
+      notify("تعذر النسخ التلقائي؛ يمكنك فتح الرابط مباشرة", "info");
+    }
+  }
+
   function approveAudit(id: number) {
     const item = auditRows.find((row) => row.id === id);
     setAuditRows((rows) => rows.filter((row) => row.id !== id));
@@ -558,7 +667,7 @@ export default function Home() {
       const response = await fetch("/api/registry", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ kind, ...payload }),
+        body: JSON.stringify({ kind, actorName: currentRole.name, ...payload }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "تعذر حفظ السجل");
@@ -589,7 +698,7 @@ export default function Home() {
       const response = await fetch("/api/registry", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ patientId, action }),
+        body: JSON.stringify({ patientId, action, actorName: currentRole.name }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "تعذر تحديث مسار المريضة");
@@ -624,6 +733,7 @@ export default function Home() {
           toDoctor: handoverToDoctor,
           patientIds: selectedPatientIds,
           notes: formData.get("notes"),
+          actorName: currentRole.name,
         }),
       });
       const data = await response.json();
@@ -644,7 +754,7 @@ export default function Home() {
       const response = await fetch("/api/handover", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "accept", handoverId: handover.id }),
+        body: JSON.stringify({ action: "accept", handoverId: handover.id, actorName: currentRole.name }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "تعذر تأكيد استلام المناوبة");
@@ -1020,6 +1130,75 @@ export default function Home() {
     </>;
   }
 
+  function renderAttendance() {
+    const formatOperationsTime = (value?: string | null) => value
+      ? new Intl.DateTimeFormat("ar-IQ-u-nu-latn", { timeZone: "Asia/Baghdad", dateStyle: "short", timeStyle: "short" }).format(new Date(value))
+      : "لا يوجد";
+    const sourceLabel: Record<string, string> = { web: "الموقع", telegram: "بوت البياتي", admin: "الإدارة", system: "النظام" };
+    const query = attendanceFilter.trim().toLocaleLowerCase("ar");
+    const visiblePresence = (attendanceData?.presence || []).filter((employee) =>
+      !query || `${employee.fullName} ${employee.role} ${employee.specialty}`.toLocaleLowerCase("ar").includes(query),
+    );
+    const configuration = telegramStatus?.configuration;
+    return <>
+      <section className="page-title operations-heading">
+        <div><p className="eyebrow">الإدارة العليا · بيانات تشغيلية مباشرة</p><h1>الحضور والنشاط وبوت البياتي</h1><p>تعرف من يوجد في المستشفى الآن، ووقت حضوره، وآخر عملية نفذها، سواء من الموقع أو Telegram.</p></div>
+        <button className="secondary-action" type="button" onClick={refreshOperations} disabled={attendanceLoading}>↻ تحديث الآن</button>
+      </section>
+
+      <section className={`panel telegram-control ${configuration?.webhookReady ? "ready" : "waiting"}`}>
+        <div className="telegram-control-icon">✈</div>
+        <div className="telegram-control-copy">
+          <p className="eyebrow">@{telegramStatus?.botUsername || "Albayati_sysbot"}</p>
+          <h2>بوت البياتي التشغيلي</h2>
+          <p>{configuration?.webhookReady ? "إعدادات التشغيل المستمر مكتملة، وجميع الأوامر تذهب إلى قاعدة النظام نفسها." : "تم تجهيز الأوامر وقاعدة البيانات والربط الآمن محليًا. ينتظر مفتاحًا جديدًا وموافقتك على النشر قبل تشغيل Webhook على مدار الساعة."}</p>
+        </div>
+        <div className="telegram-readiness">
+          <span className={configuration?.tokenConfigured ? "done" : ""}>✓ مفتاح جديد</span>
+          <span className={configuration?.secretConfigured ? "done" : ""}>✓ توقيع Webhook</span>
+          <span className={configuration?.publicUrlConfigured ? "done" : ""}>✓ عنوان HTTPS</span>
+          <b>{configuration?.webhookReady ? "جاهز للتشغيل" : "جاهز برمجيًا · غير منشور"}</b>
+        </div>
+      </section>
+
+      {telegramLink && <section className="panel telegram-link-card">
+        <div><p className="eyebrow">رمز لمرة واحدة · صالح 15 دقيقة</p><h2>ربط Telegram مع {telegramLink.employeeName}</h2><p>يفتح الموظف الرابط ثم يضغط «بدء». لا يمكن استعمال الرمز بعد نجاح الربط.</p></div>
+        <code dir="ltr">{telegramLink.code}</code>
+        <div><a href={telegramLink.deepLink} target="_blank" rel="noreferrer">فتح بوت البياتي</a><button type="button" onClick={copyTelegramLink}>نسخ الرابط</button><button type="button" onClick={() => setTelegramLink(null)}>إغلاق</button></div>
+      </section>}
+
+      <section className="operations-kpis">
+        <article><span>●</span><div><small>الموجودون الآن</small><strong>{IQD.format(attendanceData?.summary.present || 0)}</strong><em>من أصل {IQD.format(attendanceData?.summary.total || 0)} موظفًا نشطًا</em></div></article>
+        <article><span>↪</span><div><small>حضور اليوم</small><strong>{IQD.format(attendanceData?.summary.arrivalsToday || 0)}</strong><em>جلسات موثقة بالتوقيت</em></div></article>
+        <article><span>≈</span><div><small>نشاط آخر 15 دقيقة</small><strong>{IQD.format(attendanceData?.summary.activeLast15Minutes || 0)}</strong><em>من الموقع أو Telegram</em></div></article>
+        <article><span>✓</span><div><small>مهام مفتوحة</small><strong>{IQD.format(attendanceData?.summary.openTasks || 0)}</strong><em>قابلة للمتابعة عبر البوت</em></div></article>
+        <article><span>✈</span><div><small>حسابات Telegram</small><strong>{IQD.format(telegramStatus?.linkedAccounts.length || 0)}</strong><em>مرتبطة بهوية موظفين</em></div></article>
+      </section>
+
+      <section className="panel presence-panel">
+        <div className="panel-head operations-toolbar"><div><h2>حالة جميع الموظفين</h2><p>آخر نشاط هو آخر عملية موثقة، وليس مجرد فتح الصفحة.</p></div><label className="table-search"><span>⌕</span><input value={attendanceFilter} onChange={(event) => setAttendanceFilter(event.target.value)} placeholder="ابحث بالاسم أو الدور أو الاختصاص" /></label></div>
+        {attendanceLoading ? <div className="registry-empty"><span className="loading-ring" /><p>جارٍ تحميل الحضور والنشاط...</p></div> : <div className="presence-table">
+          <div className="presence-head"><span>الموظف</span><span>الحالة والحضور</span><span>آخر نشاط</span><span>المصدر والربط</span><span>إجراء الإدارة</span></div>
+          {visiblePresence.map((employee) => <div className="presence-row" key={employee.employeeId}>
+            <span className="presence-employee"><i className="record-avatar employee">{employee.fullName[0]}</i><span><b>{employee.fullName}</b><small>{employee.role} · {employee.specialty}</small></span></span>
+            <span className="presence-state"><StatusPill tone={employee.isPresent ? "approved" : "pending"}>{employee.isPresent ? "موجود الآن" : "غير موجود"}</StatusPill><small>{employee.isPresent ? `منذ ${formatOperationsTime(employee.clockInAt)}` : "لا توجد جلسة مفتوحة"}</small></span>
+            <span className="presence-activity"><b>{employee.lastActivity || "لا يوجد نشاط مسجل"}</b><small>{formatOperationsTime(employee.lastActivityAt)}</small></span>
+            <span className="presence-source"><b>{sourceLabel[employee.lastActivitySource || ""] || "—"}</b><small>{employee.telegramStatus === "معتمد" ? `Telegram مرتبط${employee.telegramUsername ? ` · @${employee.telegramUsername}` : ""}` : "Telegram غير مرتبط"}</small></span>
+            <span className="presence-actions"><button type="button" className={employee.isPresent ? "clock-out" : "clock-in"} disabled={attendanceSaving === employee.employeeId} onClick={() => toggleEmployeeAttendance(employee)}>{attendanceSaving === employee.employeeId ? "جارٍ الحفظ" : employee.isPresent ? "تسجيل انصراف" : "تسجيل حضور"}</button><button type="button" className="link-telegram" onClick={() => createTelegramLink(employee)}>ربط Telegram</button></span>
+          </div>)}
+          {!visiblePresence.length && <div className="report-empty"><span>⌕</span><p><b>لا توجد نتيجة مطابقة</b><small>جرّب الاسم أو الدور الوظيفي.</small></p></div>}
+        </div>}
+      </section>
+
+      <section className="operations-detail-grid">
+        <article className="panel attendance-history"><div className="panel-head"><div><h2>آخر سجلات الدخول والخروج</h2><p>سجل كامل لا يُستبدل عند إنشاء جلسة جديدة</p></div></div><div>{(attendanceData?.sessions || []).slice(0, 10).map((session) => <div key={session.id}><span>{session.clockOutAt ? "↪" : "●"}</span><p><b>{session.employeeName}</b><small>دخول: {formatOperationsTime(session.clockInAt)} · خروج: {formatOperationsTime(session.clockOutAt)}</small></p><em>{sourceLabel[session.clockOutSource || session.clockInSource] || "النظام"}</em></div>)}{!attendanceData?.sessions.length && <div className="report-empty"><p><b>لا توجد جلسات بعد</b><small>سيظهر أول سجل فور تسجيل حضور موظف.</small></p></div>}</div></article>
+        <article className="panel operations-tasks"><div className="panel-head"><div><h2>المهام المفتوحة</h2><p>يمكن بدء المتابعة أو الإكمال من بوت البياتي</p></div><StatusPill tone="pending">{IQD.format(attendanceData?.tasks.length || 0)} مهمة</StatusPill></div><div>{(attendanceData?.tasks || []).slice(0, 10).map((task) => <div key={task.id}><span>#{IQD.format(task.id)}</span><p><b>{task.title}</b><small>{task.assigneeName} · {task.status}{task.dueAt ? ` · ${formatOperationsTime(task.dueAt)}` : ""}</small></p><StatusPill tone={task.priority === "عاجلة" ? "returned" : task.priority === "مهمة" ? "pending" : "approved"}>{task.priority}</StatusPill></div>)}{!attendanceData?.tasks.length && <div className="report-empty"><span>✓</span><p><b>لا توجد مهام مفتوحة</b><small>أنشئ مهمة من البوت بالأمر /task.</small></p></div>}</div></article>
+      </section>
+
+      <section className="demo-notice bot-security-note"><span>!</span><p><b>إجراء أمني مطلوب قبل التشغيل</b><small>مفتاح Telegram الذي أُرسل في المحادثة أصبح مكشوفًا؛ لن يستخدمه النظام. يجب إلغاؤه من BotFather وإنشاء مفتاح جديد ثم حفظه كمتغير سري فقط.</small></p></section>
+    </>;
+  }
+
   function renderSettings() {
     const doctors = [
       ["د. أحمد البياتي", "10", "200,000"], ["د. سارة محمود", "12", "250,000"], ["د. مريم حسن", "10", "200,000"], ["د. يوسف كريم", "8", "180,000"],
@@ -1092,11 +1271,13 @@ export default function Home() {
         { title: "التقارير المالية", description: "مراجعة الإيرادات والمصروفات والرواتب حسب الفترة.", action: "reports" },
       ],
       admin: [
+        { title: "الحضور والنشاط", description: "معرفة الموجودين الآن ووقت دخولهم وآخر عملية نفذها كل موظف ومصدرها.", action: "attendance" },
         { title: "لوحة التقارير", description: "متابعة المرضى والولادات والتسليمات والنتائج المالية الفعلية.", action: "reports" },
         { title: "سجلات المناوبات", description: "متابعة السجلات المرسلة والجهات المستلمة والأثر المالي دون تعديلها.", action: "workLogs" },
         { title: "البحث الإداري", description: "الوصول إلى ملفات المرضى وحالتهم الحالية حسب الصلاحية.", action: "registry" },
       ],
       developer: [
+        { title: "بوت البياتي", description: "مراقبة جاهزية Webhook والربط الفردي وأخطاء الأوامر دون كشف المفاتيح السرية.", action: "attendance" },
         { title: "سلامة النظام", description: "مراقبة جاهزية قواعد البيانات والخدمات دون تولي القرارات الطبية أو المالية.", action: "settings" },
         { title: "سجل الأثر", description: "مراجعة السجل التقني للتعديلات عند التحقيق في مشكلة مصرح بها.", action: "workLogs" },
         { title: "صحة التقارير", description: "التأكد من اتساق مؤشرات التقارير ومصادرها.", action: "reports" },
@@ -1120,6 +1301,7 @@ export default function Home() {
     if (view === "payments") return renderPayments();
     if (view === "registry") return renderRegistry();
     if (view === "handover") return renderHandover();
+    if (view === "attendance") return renderAttendance();
     if (view === "personalSalary") return renderPersonalSalary();
     if (view === "settings") return renderSettings();
     if (view === "reports") return renderReports();

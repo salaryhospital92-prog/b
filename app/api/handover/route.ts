@@ -1,4 +1,5 @@
 import { getSupabaseAdmin } from "../../../lib/supabase-server";
+import { recordEmployeeActivitySafely } from "../../../lib/activity";
 
 type DbRecord = Record<string, unknown>;
 
@@ -90,6 +91,14 @@ export async function POST(request: Request) {
         p_notes: clean(payload.notes) || null,
       });
       if (error) throw error;
+      await recordEmployeeActivitySafely({
+        employeeName: clean(payload.actorName) || clean(payload.fromDoctor),
+        activityType: "تسليم مناوبة",
+        description: `سلّم متابعة ${patientIds.length} مريضًا إلى ${clean(payload.toDoctor)}`,
+        entityType: "doctor_shift_handover",
+        source: "web",
+        metadata: { patientCount: patientIds.length, toDoctor: clean(payload.toDoctor) },
+      });
       return Response.json(await loadHandoverData(), { status: 201 });
     }
 
@@ -100,6 +109,14 @@ export async function POST(request: Request) {
       }
       const { error } = await supabase.rpc("accept_shift_handover", { p_handover_id: handoverId });
       if (error) throw error;
+      await recordEmployeeActivitySafely({
+        employeeName: clean(payload.actorName),
+        activityType: "استلام مناوبة",
+        description: "أكد استلام المرضى وبدأ المتابعة",
+        entityType: "doctor_shift_handover",
+        entityId: handoverId,
+        source: "web",
+      });
       return Response.json(await loadHandoverData());
     }
 

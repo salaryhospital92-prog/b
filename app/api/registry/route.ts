@@ -1,5 +1,6 @@
 import { getSupabaseAdmin } from "../../../lib/supabase-server";
 import { buildNewbornNames, getBillingMode, getInitialPrice } from "../../../lib/rules-engine";
+import { recordEmployeeActivitySafely } from "../../../lib/activity";
 
 type DbRecord = Record<string, unknown>;
 
@@ -49,6 +50,7 @@ export async function POST(request: Request) {
   try {
     const payload = (await request.json()) as Record<string, unknown>;
     const kind = clean(payload.kind);
+    const actorName = clean(payload.actorName);
     const supabase = getSupabaseAdmin();
 
     if (kind === "patient") {
@@ -85,6 +87,15 @@ export async function POST(request: Request) {
 
       if (error) throw error;
       const result = data as { record: DbRecord; newborn_names: string[] };
+      await recordEmployeeActivitySafely({
+        employeeName: actorName,
+        activityType: "تسجيل مريض",
+        description: `أنشأ ملف المريض ${fullName}`,
+        entityType: "patient",
+        entityId: String(result.record.id),
+        source: "web",
+        metadata: { fileNumber, entryType },
+      });
       return Response.json({
         record: camelizeRecord(result.record),
         newbornNames: result.newborn_names || newbornNames,
@@ -117,6 +128,15 @@ export async function POST(request: Request) {
       }).select("*").single();
 
       if (error) throw error;
+      await recordEmployeeActivitySafely({
+        employeeName: actorName,
+        activityType: "تسجيل موظف",
+        description: `أنشأ حساب الموظف ${fullName}`,
+        entityType: "employee",
+        entityId: String(data.id),
+        source: "web",
+        metadata: { employeeNumber, role, specialty },
+      });
       return Response.json({ record: camelizeRecord(data as DbRecord) }, { status: 201 });
     }
 
@@ -130,6 +150,7 @@ export async function PATCH(request: Request) {
   try {
     const payload = (await request.json()) as Record<string, unknown>;
     const action = clean(payload.action);
+    const actorName = clean(payload.actorName);
     const patientId = Number(payload.patientId);
 
     if (!Number.isInteger(patientId) || patientId <= 0) {
@@ -147,6 +168,14 @@ export async function PATCH(request: Request) {
 
     if (error) throw error;
     const result = data as { patient: DbRecord; message: string };
+    await recordEmployeeActivitySafely({
+      employeeName: actorName,
+      activityType: action === "discharge" ? "خروج مريض" : "تحويل إلى رقود",
+      description: result.message,
+      entityType: "patient",
+      entityId: patientId,
+      source: "web",
+    });
     return Response.json({ patient: camelizeRecord(result.patient), message: result.message });
   } catch (error) {
     return Response.json({ error: errorMessage(error) }, { status: 500 });

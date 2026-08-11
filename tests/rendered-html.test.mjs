@@ -142,6 +142,58 @@ test("bundles the complete August administration workbook", async () => {
   assert.ok(report.byteLength > 15000);
 });
 
+test("adds durable attendance, private files, and the secure Albayati Telegram workflow", async () => {
+  const [attendanceApi, filesApi, telegramWebhook, telegramStatus, telegramLink, telegramHelper, authorization, migration, page, css, exampleEnv, webhookScript] = await Promise.all([
+    readFile(new URL("../app/api/attendance/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/files/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/telegram/webhook/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/telegram/status/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/telegram/link-code/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../lib/telegram.ts", import.meta.url), "utf8"),
+    readFile(new URL("../lib/authorization.ts", import.meta.url), "utf8"),
+    readFile(new URL("../supabase/migrations/202608110005_staff_presence_files_and_telegram.sql", import.meta.url), "utf8"),
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+    readFile(new URL("../.env.example", import.meta.url), "utf8"),
+    readFile(new URL("../scripts/register-telegram-webhook.mjs", import.meta.url), "utf8"),
+  ]);
+
+  for (const table of ["file_attachments", "employee_attendance_sessions", "employee_activity_events", "operational_tasks", "telegram_accounts", "telegram_link_codes", "telegram_updates"]) {
+    assert.match(migration, new RegExp(`create table if not exists public\\.${table}`));
+  }
+  assert.match(migration, /idx_attendance_one_open_session/);
+  assert.match(migration, /create or replace function public\.record_attendance_event/);
+  assert.match(migration, /create or replace view public\.employee_presence_overview/);
+  assert.match(migration, /'patient-files'.*false/s);
+  assert.match(migration, /'employee-files'.*false/s);
+  assert.match(attendanceApi, /employee_presence_overview/);
+  assert.match(attendanceApi, /record_attendance_event/);
+  assert.match(filesApi, /createSignedUrls/);
+  assert.match(filesApi, /file_attachments/);
+  assert.match(telegramWebhook, /x-telegram-bot-api-secret-token/);
+  assert.match(telegramWebhook, /\/checkin/);
+  assert.match(telegramWebhook, /\/patient/);
+  assert.match(telegramWebhook, /\/handover/);
+  assert.match(telegramWebhook, /\/attach/);
+  assert.match(telegramWebhook, /operational_tasks/);
+  assert.match(telegramStatus, /webhookReady/);
+  assert.match(telegramLink, /expiresAt/);
+  assert.match(telegramHelper, /sendMessage/);
+  assert.match(authorization, /auth\.getUser\(token\)/);
+  assert.match(authorization, /approval_status/);
+  assert.match(webhookScript, /setWebhook/);
+  assert.match(webhookScript, /secret_token/);
+  assert.match(page, /الحضور والنشاط وبوت البياتي/);
+  assert.match(page, /آخر سجلات الدخول والخروج/);
+  assert.match(css, /Executive presence, activity, and Telegram operations center/);
+  assert.match(exampleEnv, /TELEGRAM_BOT_TOKEN=/);
+  assert.match(exampleEnv, /TELEGRAM_WEBHOOK_SECRET=/);
+
+  const securitySurface = [attendanceApi, filesApi, telegramWebhook, telegramStatus, telegramLink, telegramHelper, authorization, migration, page, exampleEnv, webhookScript].join("\n");
+  assert.doesNotMatch(securitySurface, /\b\d{8,11}:AA[A-Za-z0-9_-]{20,}\b/);
+  assert.doesNotMatch(securitySurface, /\b(?:ghp|nfp|sbp)_[A-Za-z0-9]+\b/);
+});
+
 test("prepares Netlify without allowing an automatic release", async () => {
   const [config, gate, packageJson, setup] = await Promise.all([
     readFile(new URL("../netlify.toml", import.meta.url), "utf8"),

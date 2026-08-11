@@ -15,7 +15,8 @@
     "start:netlify": "next start",
     "test": "npm run build && node --test tests/rendered-html.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
-    "db:generate": "drizzle-kit generate"
+    "db:generate": "drizzle-kit generate",
+    "telegram:webhook": "node --env-file=.env.local scripts/register-telegram-webhook.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.2",
