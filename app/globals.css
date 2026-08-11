@@ -390,3 +390,179 @@ main { width: 100%; min-width: 0; padding: 36px clamp(24px, 4vw, 58px) 60px; max
 @media (max-width: 520px) {
   .workflow-summary { grid-template-columns: 1fr 1fr; gap: 8px; }.workflow-summary article { min-height: 78px; padding: 11px; }.workflow-summary article > span { display: none; }.workflow-summary strong { font-size: 13px; }.worklog-head { flex-direction: column; }.worklog-status { align-items: flex-start; }.case-counts { padding: 12px; gap: 6px; }.case-counts > div { grid-template-columns: minmax(0, 1fr) auto; min-height: 55px; }.case-counts > div > span { display: none; }.worklog-finance { grid-template-columns: 1fr; margin-inline: 12px; }.worklog-finance p { grid-column: 1; }.special-note { margin-inline: 12px; }.evidence-strip, .delivery-strip, .revision-history > div, .worklog-actions { padding-inline: 12px; }.delivery-strip > b { width: 100%; }.revision-history article { grid-template-columns: 28px minmax(0, 1fr); padding-block: 8px; }.revision-history article > strong { grid-column: 2; }.worklog-actions { align-items: stretch; flex-direction: column; }.worklog-actions .text-button { margin: 0; }.workflow-fields { grid-template-columns: 1fr; }.workflow-fields .form-field.full { grid-column: 1; }.review-result { grid-template-columns: 1fr; }.review-result strong { grid-column: 1; grid-row: auto; }.objection-review > div { flex-direction: column-reverse; }.objection-review button { width: 100%; }
 }
+
+/* 2026 visual clarity pass: calm green hierarchy and readable operational data */
+:root {
+  --ink: #173d34;
+  --muted: #60766f;
+  --teal: #0b7a5f;
+  --teal-dark: #075d49;
+  --teal-soft: #e4f4ed;
+  --cream: #f4f7f5;
+  --paper: #ffffff;
+  --surface: #edf3f0;
+  --line: #d5e3dd;
+  --orange: #267b61;
+  --amber: #a87925;
+  --red: #a34f49;
+  --shadow: 0 14px 36px rgba(21, 62, 52, .08);
+}
+
+:root[data-theme="dark"] {
+  --ink: #f2faf6;
+  --muted: #bed0c9;
+  --teal: #72dbb5;
+  --teal-dark: #52bd98;
+  --teal-soft: #214b3d;
+  --cream: #0e241e;
+  --paper: #17372f;
+  --surface: #1d4137;
+  --line: #376055;
+  --orange: #87d9bb;
+  --amber: #efc66f;
+  --red: #f2a19a;
+  --shadow: 0 18px 44px rgba(0, 0, 0, .24);
+}
+
+html, body, .app-shell { background: var(--cream); }
+body {
+  min-height: 100vh;
+  font-size: 15px;
+  line-height: 1.55;
+  background-image:
+    radial-gradient(circle at 14% 8%, color-mix(in srgb, var(--teal) 5%, transparent) 0, transparent 30%),
+    linear-gradient(180deg, color-mix(in srgb, var(--paper) 24%, transparent), transparent 280px);
+}
+
+.sidebar {
+  background: linear-gradient(180deg, #0b5144 0%, #083e35 100%);
+  border-left: 1px solid rgba(255, 255, 255, .08);
+  box-shadow: -12px 0 34px rgba(5, 47, 39, .12);
+}
+.sidebar nav button, .sidebar-bottom > button, .sidebar-toggle { min-height: 48px; font-size: 14px; }
+.sidebar nav > p { color: #a8c5bc; font-size: 12px; font-weight: 700; }
+.brand small, .secure-chip small { font-size: 11px; }
+.secure-chip b { font-size: 13px; }
+.sidebar nav button.active { background: #f6fffb; color: #075d49; box-shadow: 0 10px 24px rgba(0, 0, 0, .16); }
+.sidebar-collapsed .sidebar nav button.active { box-shadow: 0 8px 20px rgba(0,0,0,.16), inset -4px 0 0 #72dbb5; }
+
+.topbar {
+  min-height: 80px;
+  background: color-mix(in srgb, var(--paper) 90%, transparent);
+  border-color: var(--line);
+  box-shadow: 0 6px 24px rgba(21, 62, 52, .05);
+}
+.global-search { height: 46px; background: var(--surface); border-color: var(--line); }
+.global-search input, .table-search input { font-size: 14px; }
+.role-picker { min-width: 205px; }
+.role-picker b { font-size: 14px; }.role-picker small { font-size: 12px; }
+.demo-chip, .account-request-button { min-height: 34px; font-size: 11px; }
+.theme-button, .icon-button, .user-avatar { width: 43px; height: 43px; }
+
+main { padding-top: 42px; }
+.welcome-row h1, .page-title h1 { color: var(--ink); font-size: clamp(30px, 2.4vw, 42px); font-weight: 700; letter-spacing: -.4px; }
+.welcome-row .muted, .page-title p, .page-title p:not(.eyebrow) { color: var(--muted); font-size: 15px; line-height: 1.7; }
+.eyebrow { color: var(--teal) !important; font-size: 12px !important; letter-spacing: .2px; }
+.primary-action, .secondary-action { min-height: 48px; padding-inline: 21px; border-radius: 13px; font-size: 14px; }
+.text-button { font-size: 13px; }
+
+.panel, .assistant-card, .metric-card, .stat-row article, .registry-stats article, .report-kpis article, .worklog-card {
+  border-color: var(--line);
+  box-shadow: var(--shadow);
+}
+.panel, .assistant-card { background: var(--paper); }
+.panel-head h2 { font-size: 19px; }.panel-head p { font-size: 13px; line-height: 1.6; }
+.metric-card span, .metric-card small, .stat-row small, .stat-row em { font-size: 12px; line-height: 1.45; }
+.metric-card strong, .stat-row strong { font-size: 22px; }
+.status { min-height: 29px; padding: 5px 11px; font-size: 12px; }
+.status i { width: 7px; height: 7px; }
+
+.table-panel, .payment-panel, .caps-panel, .finance-table { border-radius: 18px; }
+.toolbar { min-height: 76px; }.filters button { min-height: 38px; padding-inline: 15px; font-size: 12px; }
+.table-search { height: 42px; width: 250px; background: var(--paper); }
+.table-header, .caps-head, .payment-head, .report-table-head { min-height: 50px; background: var(--surface); color: var(--muted); font-size: 12px; font-weight: 700; }
+.table-row { min-height: 82px; font-size: 14px; }.doctor-cell b, .audit-mini b { font-size: 14px; }.doctor-cell small, .audit-mini small { font-size: 11px; }
+.approve-button, .audit-mini > button { min-height: 38px; padding-inline: 13px; font-size: 12px; }
+
+.payment-summary b { font-size: 13px; }.payment-summary small { font-size: 11px; }
+.payment-row { min-height: 78px; padding-block: 11px; border-color: var(--line); font-size: 13px; }
+.payment-row:not(.payment-head):nth-child(odd) { background: color-mix(in srgb, var(--surface) 34%, var(--paper)); }
+.patient-name b { font-size: 14px; }.patient-name small { font-size: 11px; }
+.payment-cell { min-height: 38px; border-radius: 9px; font-size: 12px; font-weight: 700; }
+.payment-cell.paid { background: #e0f3e9; border-color: #b9ddcc; color: #176548; }
+.payment-cell.pending { background: #fff4d8; border-color: #ead49d; color: #805e18; }
+.payment-cell.free { background: #edf0ee; border-color: #d9dfdc; color: #52635e; }
+
+.caps-head { font-size: 12px; }.caps-row { min-height: 80px; }.caps-row label { height: 43px; background: var(--surface); }
+.caps-row input { font-size: 14px; }.caps-row label small, .caps-row .muted { font-size: 11px; }
+.day-row { min-height: 78px; border-color: var(--line); }.day-copy b { font-size: 14px; }.day-copy small { font-size: 12px; }.row-amount { font-size: 14px; }
+.assistant-title b, .activity-list b, .alert-grid b { font-size: 14px; }
+.assistant-title small, .activity-list small, .alert-grid small, .assistant-message p, .assistant-note, .smart-tip p { font-size: 12px; }
+.assistant-message strong, .smart-tip b, .assistant-link { font-size: 13px; }
+.audit-mini { min-height: 78px; }.audit-mini > strong, .activity-list strong { font-size: 13px; }
+
+.form-field > span { color: var(--ink); font-size: 13px; font-weight: 700; }
+.form-field input, .form-field select, .form-field textarea { min-height: 47px; border-color: var(--line); font-size: 14px; }
+.registry-health b, .registry-form-head b, .registry-submit b { font-size: 14px; }
+.registry-health small, .registry-form-head small, .registry-submit small, .recent-records small { font-size: 12px; }
+.registry-menu > button { min-height: 47px; font-size: 13px; }
+.recent-records b, .access-row b { font-size: 13px; }.recent-records small, .access-row small { font-size: 11px; }
+.lifecycle-actions button, .access-actions button, .oauth-actions button { min-height: 39px; font-size: 12px; }
+.access-footnote { font-size: 11px; }
+
+.report-kpis small, .top-doctors small, .report-empty small, .live-data small, .chart-value { font-size: 11px; }
+.report-kpis strong { font-size: 19px; }.top-doctors b { font-size: 13px; }.report-chart small { font-size: 10px; }
+.report-table > div { min-height: 56px; font-size: 13px; }
+.period-switch button { min-height: 39px; font-size: 12px; }.report-date { font-size: 12px; }
+.capability-card h2 { font-size: 19px; }.capability-card p { font-size: 13px; }.safety-workflow b { font-size: 13px; }.safety-workflow small { font-size: 11px; }
+.demo-notice b { font-size: 13px; }.demo-notice small { font-size: 11px; }
+
+.workflow-summary small { font-size: 12px; }.workflow-summary strong { font-size: 19px; }
+.worklog-doctor h2 { font-size: 17px; }.worklog-doctor small, .worklog-status small { font-size: 11px; }
+.case-counts small { font-size: 11px; }.case-counts strong { font-size: 18px; }
+.special-note b { font-size: 13px; }.special-note p { font-size: 12px; }
+.worklog-finance small { font-size: 11px; }.worklog-finance b, .worklog-finance strong { font-size: 18px; }.worklog-finance p { font-size: 11px; }
+.evidence-strip > b, .delivery-strip > b { font-size: 11px; }.evidence-strip a, .evidence-strip > div > span, .delivery-strip > span { min-height: 35px; font-size: 11px; }
+.revision-history summary { min-height: 52px; font-size: 12px; }.revision-history b { font-size: 12px; }.revision-history p { font-size: 11px; }.revision-history small { font-size: 10px; }.revision-history article > strong { font-size: 12px; }
+.consultation-evidence-fields > div:first-child b, .calculation-note b { font-size: 13px; }.consultation-evidence-fields > div:first-child small, .calculation-note small, .file-field b { font-size: 11px; }
+.objection-head small { font-size: 11px; }.objection-head h2 { font-size: 18px; }.objection-reason { font-size: 13px; }.review-result b { font-size: 13px; }.review-result p { font-size: 12px; }.review-result strong { font-size: 14px; }.objection-review label > span, .objection-review textarea, .objection-review input { font-size: 12px; }
+
+:root[data-theme="dark"] .sidebar { background: linear-gradient(180deg, #0b4a3e 0%, #082f29 100%); }
+:root[data-theme="dark"] .topbar { background: rgba(20, 55, 47, .92); }
+:root[data-theme="dark"] .panel,
+:root[data-theme="dark"] .assistant-card,
+:root[data-theme="dark"] .metric-card,
+:root[data-theme="dark"] .stat-row article,
+:root[data-theme="dark"] .registry-stats article,
+:root[data-theme="dark"] .report-kpis article { background: var(--paper); }
+:root[data-theme="dark"] .payment-row:not(.payment-head):nth-child(odd) { background: #1a3c33; }
+:root[data-theme="dark"] .payment-cell { background: #23453b; color: #d5e3de; }
+:root[data-theme="dark"] .payment-cell.paid { background: #20513e; border-color: #34775e; color: #a9edcf; }
+:root[data-theme="dark"] .payment-cell.pending { background: #54451f; border-color: #806b35; color: #f6d785; }
+:root[data-theme="dark"] .payment-cell.free { background: #30433d; border-color: #4a6058; color: #d1ddd8; }
+:root[data-theme="dark"] .status.approved { background: #20513e; color: #b8f1d9; }
+:root[data-theme="dark"] .status.pending { background: #54451f; color: #f5d47e; }
+:root[data-theme="dark"] .status.returned { background: #58332f; color: #ffc0b8; }
+:root[data-theme="dark"] .assistant-card,
+:root[data-theme="dark"] .chief-assistant { background: linear-gradient(160deg, #1b4036, #17372f); border-color: var(--line); }
+:root[data-theme="dark"] .assistant-message,
+:root[data-theme="dark"] .insight-number,
+:root[data-theme="dark"] .title-stat { background: var(--surface); border-color: var(--line); }
+:root[data-theme="dark"] .filters button,
+:root[data-theme="dark"] .table-header,
+:root[data-theme="dark"] .caps-head,
+:root[data-theme="dark"] .payment-head { background: #21483d; }
+:root[data-theme="dark"] .global-search:focus-within,
+:root[data-theme="dark"] .table-search:focus-within { background: var(--paper); }
+
+@media (max-width: 900px) {
+  .topbar { min-height: 68px; }.role-picker { min-width: 43px; }
+  main { padding-top: 28px; }.welcome-row h1, .page-title h1 { font-size: 29px; }
+  .panel-head h2 { font-size: 18px; }.payment-row { min-height: 72px; }
+}
+
+@media (max-width: 430px) {
+  body { font-size: 14px; }.welcome-row h1, .page-title h1 { font-size: 27px; }
+  .workflow-summary small { font-size: 11px; }.workflow-summary strong { font-size: 16px; }
+  .case-counts small { font-size: 10px; }.case-counts strong { font-size: 16px; }
+}

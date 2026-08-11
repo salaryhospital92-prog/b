@@ -82,6 +82,9 @@ test("keeps Supabase credentials server-side and covers responsive screens", asy
   assert.match(residentWorkflow, /اعتراضاتي المالية/);
   assert.match(css, /data-theme="dark"/);
   assert.match(css, /report-kpis/);
+  assert.match(css, /visual clarity pass/);
+  assert.match(css, /\.payment-row[^}]*font-size:\s*13px/);
+  assert.match(css, /--cream:\s*#0e241e/);
 
   for (const table of ["employees", "patients", "patient_events", "procedures", "doctor_calls", "call_details", "inpatient_payments", "doctor_caps", "audit_logs"]) {
     assert.match(migration, new RegExp(`create table if not exists public\\.${table}`));
