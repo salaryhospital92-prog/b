@@ -81,6 +81,9 @@ test("keeps Supabase credentials server-side and covers responsive screens", asy
   assert.match(page, /doctorProfiles\[activeAccountId\]/);
   assert.match(page, /globalSearchResults/);
   assert.match(page, /مركز الإشعارات/);
+  assert.match(page, /ADMIN_REPORT_URL/);
+  assert.match(page, /downloadAdminReport/);
+  assert.match(page, /تقرير الإدارة – آب 2026/);
   assert.match(page, /developer-system/);
   assert.match(page, /brand-mark/);
   assert.match(page, /sidebarExpanded \? "→" : "←"/);
@@ -131,6 +134,12 @@ test("ships installable PWA icon metadata and notification worker", async () => 
   assert.match(worker, /url\.pathname\.startsWith\("\/api\/"\)/);
   assert.match(loginLanding, /beforeinstallprompt|onInstall/);
   assert.match(loginLanding, /iPhone/);
+});
+
+test("bundles the complete August administration workbook", async () => {
+  const report = await readFile(new URL("../public/reports/albayati-admin-august-2026.xlsx", import.meta.url));
+  assert.equal(report.subarray(0, 2).toString("utf8"), "PK");
+  assert.ok(report.byteLength > 15000);
 });
 
 test("prepares Netlify without allowing an automatic release", async () => {

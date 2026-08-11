@@ -742,6 +742,12 @@ main { padding-top: 42px; }
 .notifications-panel article > span { width: 35px; height: 35px; display: grid; place-items: center; border-radius: 10px; background: var(--teal-soft); color: var(--teal); font-weight: 800; }
 .notifications-panel article p { margin: 0; display: flex; flex-direction: column; gap: 2px; }.notifications-panel article b { font-size: 12px; }.notifications-panel article small { color: var(--muted); font-size: 10px; }
 .notifications-panel > button { width: 100%; min-height: 39px; margin-top: 12px; border: 0; border-radius: 10px; background: var(--teal); color: white; font-size: 12px; font-weight: 700; cursor: pointer; }
+.notifications-panel .report-notification { grid-template-columns: 35px minmax(0, 1fr) auto; margin: 8px 0 2px; padding: 11px 8px; border: 1px solid color-mix(in srgb, var(--teal) 25%, var(--line)); border-radius: 11px; background: color-mix(in srgb, var(--teal-soft) 70%, var(--paper)); }
+.notifications-panel .report-notification > span { color: white; background: var(--teal); font-size: 10px; }
+.notifications-panel .report-notification a { min-height: 31px; display: inline-flex; align-items: center; padding-inline: 10px; border-radius: 8px; background: var(--teal); color: white; text-decoration: none; font-size: 10px; font-weight: 800; }
+.report-download-button { gap: 9px; border-color: color-mix(in srgb, var(--teal) 45%, var(--line)); color: var(--teal); background: var(--paper); }
+.report-download-button > span { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 8px; background: var(--teal); color: white; font-size: 9px; font-weight: 800; }
+.report-download-button:hover { color: var(--teal-dark); background: var(--teal-soft); }
 
 /* Login and PWA entry experience */
 .login-page { min-height: 100dvh; max-width: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(470px, 1.15fr) minmax(420px, .85fr); background: var(--cream); }

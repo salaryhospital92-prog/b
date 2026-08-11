@@ -45,6 +45,7 @@ type BeforeInstallPromptEvent = Event & { prompt: () => Promise<void>; userChoic
 
 const IQD = new Intl.NumberFormat("en-US");
 const money = (value: number) => `${IQD.format(value)} د.ع`;
+const ADMIN_REPORT_URL = "/reports/albayati-admin-august-2026.xlsx";
 
 const recentDays: DoctorDay[] = [
   { id: 1, day: "الأحد", date: "10 آب 2026", status: "معتمد", amount: 245000, tone: "approved", details: "8 استشاريات · ولادة طبيعية · 3 حالات رقود" },
@@ -455,6 +456,33 @@ export default function Home() {
     }
   }
 
+  async function downloadAdminReport() {
+    try {
+      const report = await fetch(ADMIN_REPORT_URL, { method: "HEAD", cache: "no-store" });
+      if (!report.ok) throw new Error("report-not-found");
+      const link = document.createElement("a");
+      link.href = ADMIN_REPORT_URL;
+      link.download = "تقرير الإدارة العليا - آب 2026.xlsx";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setNotificationsOpen(true);
+      notify("بدأ تنزيل تقرير الإدارة بصيغة Excel ويمكن تنزيله أيضًا من مركز الإشعارات");
+      if (notificationPermission === "granted" && "serviceWorker" in navigator) {
+        const registration = await navigator.serviceWorker.ready;
+        await registration.showNotification("تقرير الإدارة جاهز", {
+          body: "تقرير آب 2026 متاح الآن بصيغة Excel ويتضمن 4 صفحات تفصيلية.",
+          icon: "/icons/icon-192.png",
+          badge: "/icons/favicon-32.png",
+          tag: "albayati-admin-report-august-2026",
+          data: { url: ADMIN_REPORT_URL },
+        });
+      }
+    } catch {
+      notify("تعذر تنزيل تقرير الإدارة الآن؛ حاول مرة أخرى", "info");
+    }
+  }
+
   async function startAccessRequest(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
@@ -785,7 +813,7 @@ export default function Home() {
     const chart = [45, 58, 52, 72, 64, 83, 76, 94];
     return (
       <>
-        <section className="welcome-row"><div><p className="eyebrow">نظرة تنفيذية · آب 2026</p><h1>لوحة قيادة مستشفى البياتي</h1><p className="muted">ملخص لحظي للأداء الطبي والمالي.</p></div><button className="secondary-action" onClick={() => notify("تم تجهيز تقرير الإدارة لشهر آب")}>⇩ تصدير الملخص</button></section>
+        <section className="welcome-row"><div><p className="eyebrow">نظرة تنفيذية · آب 2026</p><h1>لوحة قيادة مستشفى البياتي</h1><p className="muted">ملخص لحظي للأداء الطبي والمالي.</p></div><button className="secondary-action report-download-button" onClick={downloadAdminReport}><span>XL</span> تنزيل تقرير Excel</button></section>
         <section className="stat-row executive">
           <article><span className="stat-symbol green">↗</span><div><small>إجمالي العوائد</small><strong>{money(48650000)}</strong><em>↑ 8.7% عن تموز</em></div></article>
           <article><span className="stat-symbol blue">♙</span><div><small>المرضى هذا الشهر</small><strong>342</strong><em>معدل إشغال 81%</em></div></article>
@@ -1153,7 +1181,7 @@ export default function Home() {
         <header className="topbar">
           <div className="mobile-brand"><button type="button" className="menu-trigger" aria-label="إظهار القائمة الجانبية" onClick={() => setSidebarExpanded(true)}>☰</button><span className="brand-mark" role="img" aria-label="شعار نظام البياتي" /><b>البياتي</b></div>
           <label className="global-search"><span aria-hidden="true">⌕</span><input aria-label="البحث في النظام" value={globalSearch} onChange={(event) => { setGlobalSearch(event.target.value); setSearchOpen(true); }} onFocus={() => setSearchOpen(true)} onBlur={() => window.setTimeout(() => setSearchOpen(false), 150)} onKeyDown={(event) => { if (event.key === "Enter" && globalSearchResults[0]) activateSearchResult(globalSearchResults[0]); if (event.key === "Escape") setSearchOpen(false); }} placeholder="ابحث بالاسم أو رقم الملف أو القسم..." />{searchOpen && globalSearch.trim().length >= 2 && <div className="global-search-results" role="listbox">{globalSearchResults.length ? globalSearchResults.map((result) => <button type="button" role="option" aria-selected="false" key={result.id} onMouseDown={(event) => event.preventDefault()} onClick={() => activateSearchResult(result)}><span>{result.kind === "account" ? "ط" : result.kind === "patient" ? "م" : "←"}</span><p><b>{result.label}</b><small>{result.meta}</small></p></button>) : <p className="search-empty"><b>لا توجد نتيجة مطابقة</b><small>جرّب الاسم الكامل أو رقم الملف.</small></p>}</div>}</label>
-          <div className="top-actions"><span className="demo-chip">وضع تجريبي</span><button className="account-request-button" onClick={() => setAccessOpen(true)}>طلب حساب</button><button className="theme-button" aria-label="تبديل الوضع الليلي والنهاري" title="الوضع الليلي / النهاري" onClick={toggleTheme}><span className="theme-sun">☀</span><span className="theme-moon">☾</span></button><div className="notification-wrap"><button className="icon-button notification-button" aria-label="مركز الإشعارات" title="مركز الإشعارات" aria-expanded={notificationsOpen} onClick={() => setNotificationsOpen((open) => !open)}><span aria-hidden="true">🔔</span><i /></button>{notificationsOpen && <section className="notifications-panel"><div><b>مركز الإشعارات</b><small>{notificationPermission === "granted" ? "إشعارات الجهاز مفعّلة" : "تحتاج تفعيل إشعارات الجهاز"}</small></div><article><span>⇄</span><p><b>تسليم المناوبة</b><small>قائمة المرضى المستلمين جاهزة للمتابعة.</small></p></article><article><span>✓</span><p><b>آخر مزامنة مكتملة</b><small>تم حفظ تغييرات {currentRole.name} مع سجل المنفذ.</small></p></article>{notificationPermission !== "granted" && <button onClick={enableNotifications} disabled={notificationPermission === "unsupported"}>تفعيل إشعارات الجهاز</button>}</section>}</div><span className="divider" /><div className="role-picker"><span className="user-avatar">{currentRole.name.replace("د. ", "")[0] || "ب"}</span><div><b>{currentRole.name}</b><small>{currentRole.label}</small></div><select aria-label="تبديل الحساب التجريبي" value={activeAccountId} onChange={(event) => changeAccount(event.target.value)}>{demoAccounts.map((item) => <option key={item.id} value={item.id}>{item.name} — {item.label}</option>)}</select></div></div>
+          <div className="top-actions"><span className="demo-chip">وضع تجريبي</span><button className="account-request-button" onClick={() => setAccessOpen(true)}>طلب حساب</button><button className="theme-button" aria-label="تبديل الوضع الليلي والنهاري" title="الوضع الليلي / النهاري" onClick={toggleTheme}><span className="theme-sun">☀</span><span className="theme-moon">☾</span></button><div className="notification-wrap"><button className="icon-button notification-button" aria-label="مركز الإشعارات" title="مركز الإشعارات" aria-expanded={notificationsOpen} onClick={() => setNotificationsOpen((open) => !open)}><span aria-hidden="true">🔔</span><i /></button>{notificationsOpen && <section className="notifications-panel"><div><b>مركز الإشعارات</b><small>{notificationPermission === "granted" ? "إشعارات الجهاز مفعّلة" : "تحتاج تفعيل إشعارات الجهاز"}</small></div>{(role === "admin" || role === "developer") && <article className="report-notification"><span>XL</span><p><b>تقرير الإدارة – آب 2026</b><small>Excel متكامل: لوحة، تشغيل يومي، أطباء ومالية.</small></p><a href={ADMIN_REPORT_URL} download="تقرير الإدارة العليا - آب 2026.xlsx">تنزيل</a></article>}<article><span>⇄</span><p><b>تسليم المناوبة</b><small>قائمة المرضى المستلمين جاهزة للمتابعة.</small></p></article><article><span>✓</span><p><b>آخر مزامنة مكتملة</b><small>تم حفظ تغييرات {currentRole.name} مع سجل المنفذ.</small></p></article>{notificationPermission !== "granted" && <button onClick={enableNotifications} disabled={notificationPermission === "unsupported"}>تفعيل إشعارات الجهاز</button>}</section>}</div><span className="divider" /><div className="role-picker"><span className="user-avatar">{currentRole.name.replace("د. ", "")[0] || "ب"}</span><div><b>{currentRole.name}</b><small>{currentRole.label}</small></div><select aria-label="تبديل الحساب التجريبي" value={activeAccountId} onChange={(event) => changeAccount(event.target.value)}>{demoAccounts.map((item) => <option key={item.id} value={item.id}>{item.name} — {item.label}</option>)}</select></div></div>
         </header>
         <main>{renderContent()}</main>
         <nav className="mobile-nav" aria-label="قائمة الهاتف">{navItems.slice(0, 4).map((item) => <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => navigateTo(item.id)}><Icon>{item.icon}</Icon><small>{item.label.split(" ")[0]}</small></button>)}</nav>
