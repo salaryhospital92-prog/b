@@ -12,6 +12,8 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync, unlinkSync } from "node:fs";
 
 const CONFIG = "dist/server/wrangler.json";
+// The Worker name decides the hostname: <name>.<account-subdomain>.workers.dev
+const WORKER_NAME = process.env.WORKER_NAME || "albayati";
 const ENV_FILE = ".env.local";
 const SECRET_FILE = ".wrangler/secrets.tmp.json";
 
@@ -72,13 +74,13 @@ try {
 } catch { /* deploying outside a checkout is allowed */ }
 
 console.log(`\nنشر إلى Cloudflare · النسخة ${commit.slice(0, 7)}\n`);
-wrangler(["deploy", "-c", CONFIG, "--var", `COMMIT_REF:${commit}`, "--var", `BUILD_TIME:${new Date().toISOString()}`]);
+wrangler(["deploy", "-c", CONFIG, "--name", WORKER_NAME, "--var", `COMMIT_REF:${commit}`, "--var", `BUILD_TIME:${new Date().toISOString()}`]);
 
 // Secrets go in one bulk call so a half-configured Worker is never left live.
 console.log("\nرفع متغيرات التشغيل...\n");
 writeFileSync(SECRET_FILE, JSON.stringify(runtime));
 try {
-  wrangler(["secret", "bulk", SECRET_FILE, "-c", CONFIG]);
+  wrangler(["secret", "bulk", SECRET_FILE, "-c", CONFIG, "--name", WORKER_NAME]);
 } finally {
   unlinkSync(SECRET_FILE);
 }
