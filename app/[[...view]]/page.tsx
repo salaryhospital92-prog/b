@@ -1484,6 +1484,20 @@ export default function Home() {
     return renderDoctorDashboard();
   }
 
+  const accessModal = accessOpen &&  <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setAccessOpen(false)}><form className="entry-modal access-modal" onSubmit={startAccessRequest}>
+        <div className="modal-head"><div><p className="eyebrow">حساب جديد بموافقة رئيس المقيمين</p><h2>طلب دخول إلى نظام البياتي</h2><p>تحقق من هويتك أولًا، ثم يراجع رئيس المقيمين الدور والاختصاص.</p></div><button type="button" className="close-button" aria-label="إغلاق" onClick={() => setAccessOpen(false)}>×</button></div>
+        <div className="demo-notice compact"><span>i</span><p><b>الحسابات التجريبية ستبقى ظاهرة</b><small>يمكن للإدارة مواصلة تجربة النظام أثناء جمع طلبات المستخدمين الحقيقيين.</small></p></div>
+        <div className="access-fields">
+          <label className="form-field"><span>الاسم الكامل</span><input name="fullName" required placeholder="الاسم كما سيظهر في النظام" /></label>
+          <label className="form-field"><span>البريد الإلكتروني</span><input name="email" type="email" required dir="ltr" placeholder="name@gmail.com" /></label>
+          <label className="form-field"><span>الدور المطلوب</span><select name="requestedRole" required defaultValue="طبيب مقيم"><option>طبيب مقيم</option><option>رئيس المقيمين</option><option>الحسابات</option><option>الإدارة العليا</option></select></label>
+          <label className="form-field"><span>الاختصاص</span><select name="specialty" required defaultValue="النسائية والتوليد"><option>النسائية والتوليد</option><option>الأطفال وحديثو الولادة</option><option>التخدير</option><option>التمريض</option><option>الحسابات</option><option>التسجيل والاستعلامات</option><option>إدارة المستشفى</option></select></label>
+        </div>
+        <div className="oauth-actions"><button name="provider" value="email" disabled={accessSaving}><span>@</span> المتابعة عبر البريد الإلكتروني</button><button name="provider" value="google" disabled={accessSaving}><span>G</span> المتابعة عبر Google</button><button name="provider" value="apple" disabled={accessSaving}><span>●</span> المتابعة عبر Apple</button></div>
+        <p className="access-footnote">لن يُفعّل الحساب بعد التحقق مباشرة؛ يبقى بحالة «بانتظار الموافقة» حتى يعتمد رئيس المقيمين الطلب.</p>
+  </form></div>;
+
+
   const installGuideModal = installGuide && <div className="modal-backdrop install-guide-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setInstallGuide(null)}>
     <section className="install-guide" role="dialog" aria-modal="true" aria-label={`طريقة تثبيت البياتي على ${installGuide === "ios" ? "iPhone" : "Android"}`}>
       <button className="close-button" type="button" aria-label="إغلاق" onClick={() => setInstallGuide(null)}>×</button>
@@ -1508,11 +1522,12 @@ export default function Home() {
         isInstalled={isInstalled}
         notificationPermission={notificationPermission}
         onLogin={signIn}
-        onRequestAccount={() => { setSignedIn(true); setAccessOpen(true); }}
+        onRequestAccount={() => setAccessOpen(true)}
         onInstall={installApp}
         onEnableNotifications={enableNotifications}
         onToggleTheme={toggleTheme}
       />
+      {accessModal}
       {installGuideModal}
       {toast && <div className={`toast ${toast.kind}`}><span>{toast.kind === "success" ? "✓" : "i"}</span>{toast.message}</div>}
     </>;
@@ -1553,18 +1568,7 @@ export default function Home() {
         <nav className="mobile-nav" aria-label="قائمة الهاتف">{navItems.slice(0, 4).map((item) => <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => navigateTo(item.id)}><Icon>{item.icon}</Icon><small>{item.label.split(" ")[0]}</small></button>)}</nav>
       </div>
 
-      {accessOpen && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setAccessOpen(false)}><form className="entry-modal access-modal" onSubmit={startAccessRequest}>
-        <div className="modal-head"><div><p className="eyebrow">حساب جديد بموافقة رئيس المقيمين</p><h2>طلب دخول إلى نظام البياتي</h2><p>تحقق من هويتك أولًا، ثم يراجع رئيس المقيمين الدور والاختصاص.</p></div><button type="button" className="close-button" aria-label="إغلاق" onClick={() => setAccessOpen(false)}>×</button></div>
-        <div className="demo-notice compact"><span>i</span><p><b>الحسابات التجريبية ستبقى ظاهرة</b><small>يمكن للإدارة مواصلة تجربة النظام أثناء جمع طلبات المستخدمين الحقيقيين.</small></p></div>
-        <div className="access-fields">
-          <label className="form-field"><span>الاسم الكامل</span><input name="fullName" required placeholder="الاسم كما سيظهر في النظام" /></label>
-          <label className="form-field"><span>البريد الإلكتروني</span><input name="email" type="email" required dir="ltr" placeholder="name@gmail.com" /></label>
-          <label className="form-field"><span>الدور المطلوب</span><select name="requestedRole" required defaultValue="طبيب مقيم"><option>طبيب مقيم</option><option>رئيس المقيمين</option><option>الحسابات</option><option>الإدارة العليا</option></select></label>
-          <label className="form-field"><span>الاختصاص</span><select name="specialty" required defaultValue="النسائية والتوليد"><option>النسائية والتوليد</option><option>الأطفال وحديثو الولادة</option><option>التخدير</option><option>التمريض</option><option>الحسابات</option><option>التسجيل والاستعلامات</option><option>إدارة المستشفى</option></select></label>
-        </div>
-        <div className="oauth-actions"><button name="provider" value="email" disabled={accessSaving}><span>@</span> المتابعة عبر البريد الإلكتروني</button><button name="provider" value="google" disabled={accessSaving}><span>G</span> المتابعة عبر Google</button><button name="provider" value="apple" disabled={accessSaving}><span>●</span> المتابعة عبر Apple</button></div>
-        <p className="access-footnote">لن يُفعّل الحساب بعد التحقق مباشرة؛ يبقى بحالة «بانتظار الموافقة» حتى يعتمد رئيس المقيمين الطلب.</p>
-      </form></div>}
+      {accessModal}
       {installGuideModal}
       {toast && <div className={`toast ${toast.kind}`}><span>{toast.kind === "success" ? "✓" : "i"}</span>{toast.message}</div>}
     </div>

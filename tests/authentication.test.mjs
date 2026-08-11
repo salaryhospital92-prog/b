@@ -78,3 +78,19 @@ test("one tap on the bell turns device notifications on", () => {
   assert.match(page, /if \(notificationPermission === "granted"\) setNotificationsOpen/);
   assert.match(page, /else enableNotifications\(\);/);
 });
+
+test("nothing but a confirmed session can open the dashboard", () => {
+  // Requesting an account used to call setSignedIn(true) so the modal could be
+  // shown, which handed a stranger the whole dashboard.
+  const grants = [...page.matchAll(/setSignedIn\(true\)/g)];
+  assert.equal(grants.length, 1, `${grants.length} places grant entry; only applySession may`);
+  const applySession = page.slice(page.indexOf("function applySession"), page.indexOf("async function signOut"));
+  assert.match(applySession, /setSignedIn\(true\)/, "the one grant must live in applySession");
+  assert.doesNotMatch(page, /onRequestAccount=\{\(\) => \{[^}]*setSignedIn/);
+});
+
+test("the account request form is reachable without signing in", () => {
+  assert.match(page, /const accessModal = accessOpen &&/);
+  // Rendered on the login screen and inside the app, from the same definition.
+  assert.equal((page.match(/\{accessModal\}/g) || []).length, 2);
+});
