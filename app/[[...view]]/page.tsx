@@ -10,7 +10,7 @@ import ShiftSchedule from "../shift-schedule";
 import InpatientDays from "../inpatient-days";
 
 type Role = "doctor" | "chief" | "accounts" | "admin" | "developer";
-type DemoAccount = { id: string; role: Role; label: string; name: string; username: string; password: string; department: string };
+type DemoAccount = { id: string; role: Role; label: string; name: string; username: string; department: string };
 type View = "overview" | "handover" | "days" | "workLogs" | "objections" | "audit" | "payments" | "reports" | "settings" | "registry" | "personalSalary" | "capabilities" | "accessRequests" | "attendance" | "shifts" | "inpatientDays";
 type Toast = { message: string; kind: "success" | "info" } | null;
 type PatientRecord = { id: number; fullName: string; fileNumber: string; department: string; admissionDate: string; paymentCategory: string; entryType: string; patientStatus: string; billingMode: string; attendingDoctor?: string | null; isNewborn?: boolean; newbornCount?: number };
@@ -89,13 +89,28 @@ const doctorProfiles: Record<string, DoctorProfile> = {
 const auditSeed: { id: number; doctor: string; avatar: string; date: string; procedures: string; entered: number; cap: number; over: boolean; wait: string }[] = [];
 const paymentSeed: { id: number; patient: string; file: string; admission: string; days: string[] }[] = [];
 
+// Presentation only — which screens a role sees. Credentials live in the
+// database and are checked by the server; none of this identifies anyone.
 const demoAccounts: DemoAccount[] = [
-  { id: "admin-mustafa", role: "admin", label: "الإدارة العليا", name: "مصطفى البياتي", username: "mustafa", password: "Mustafa123", department: "رئاسة القسم" },
-  { id: "doctor-shahd", role: "doctor", label: "طبيب مقيم", name: "د. شهد", username: "shahd", password: "Shahd123", department: "الردهة والرقود" },
-  { id: "doctor-tabarak", role: "doctor", label: "طبيب مقيم", name: "د. تبارك", username: "tabarak", password: "Tabarak123", department: "الاستشارية" },
-  { id: "doctor-fanar", role: "doctor", label: "طبيب مقيم", name: "د. فنار", username: "fanar", password: "Fanar123", department: "صالة الولادة" },
-  { id: "developer-system", role: "developer", label: "مطور النظام · معاينة جميع الحسابات", name: "Admin", username: "Admin", password: "Ahmed123", department: "إدارة النظام" },
+  { id: "admin-mustafa", role: "admin", label: "الإدارة العليا", name: "مصطفى البياتي", username: "mustafa", department: "رئاسة القسم" },
+  { id: "doctor-shahd", role: "doctor", label: "طبيب مقيم", name: "د. شهد", username: "shahd", department: "الردهة والرقود" },
+  { id: "doctor-tabarak", role: "doctor", label: "طبيب مقيم", name: "د. تبارك", username: "tabarak", department: "الاستشارية" },
+  { id: "doctor-fanar", role: "doctor", label: "طبيب مقيم", name: "د. فنار", username: "fanar", department: "صالة الولادة" },
+  { id: "developer-system", role: "developer", label: "مطور النظام · معاينة جميع الحسابات", name: "Admin", username: "Admin", department: "إدارة النظام" },
 ];
+
+/** Maps the signed-in employee onto the screen set their job needs. */
+function accountForUser(user: { username: string; fullName: string; role: string }) {
+  const byName = demoAccounts.find((account) => account.name === user.fullName);
+  const byUsername = demoAccounts.find((account) => account.username.toLowerCase() === user.username.toLowerCase());
+  if (byName || byUsername) return byName || byUsername!;
+  const role: DemoAccount["role"] = user.role === "الإدارة العليا" ? "admin"
+    : user.role === "رئيس المقيمين" ? "chief"
+    : user.role === "الحسابات" ? "accounts"
+    : user.role === "مطور النظام" ? "developer"
+    : "doctor";
+  return { id: `employee-${user.username}`, role, label: user.role, name: user.fullName, username: user.username, department: user.role };
+}
 
 const VIEW_PATHS: Record<View, string> = {
   overview: "/dashboard",
@@ -142,6 +157,8 @@ function StatusPill({ tone, children }: { tone: string; children: React.ReactNod
 export default function Home() {
   const [signedIn, setSignedIn] = useState(false);
   const [activeAccountId, setActiveAccountId] = useState("admin-mustafa");
+  const [sessionUser, setSessionUser] = useState<{ id: number; fullName: string; role: string; specialty: string; username: string; mustChangePassword: boolean } | null>(null);
+  const [sessionChecked, setSessionChecked] = useState(false);
   const pathname = usePathname();
   const [view, setView] = useState<View>(() => viewForPath(pathname));
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
@@ -193,7 +210,12 @@ export default function Home() {
   const [readmissionNewbornId, setReadmissionNewbornId] = useState(0);
   const [readmissionSaving, setReadmissionSaving] = useState(false);
 
-  const currentRole = demoAccounts.find((item) => item.id === activeAccountId) || demoAccounts[0];
+  const isDeveloper = sessionUser?.role === "مطور النظام";
+  // Only the developer account may preview another role; everyone else is
+  // pinned to the identity the server signed them in as.
+  const currentRole = isDeveloper
+    ? (demoAccounts.find((item) => item.id === activeAccountId) || demoAccounts[0])
+    : sessionUser ? accountForUser(sessionUser) : demoAccounts[0];
   const role = currentRole.role;
   const doctorProfile = doctorProfiles[activeAccountId] || doctorProfiles["doctor-fanar"];
   const isBirthCase = isBirthEntry(patientEntryType);
@@ -435,6 +457,19 @@ export default function Home() {
   }
 
   useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const response = await fetch("/api/auth/login", { cache: "no-store" });
+        const payload = await response.json();
+        if (active && payload.user) applySession(payload.user);
+      } catch { /* an unreachable server simply leaves the login screen up */ }
+      finally { if (active) setSessionChecked(true); }
+    })();
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
     function onPopState() {
       const next = viewForPath(window.location.pathname);
       setView(next);
@@ -444,16 +479,39 @@ export default function Home() {
     return () => window.removeEventListener("popstate", onPopState);
   }, []);
 
-  function loginDemoAccount(username: string, password: string) {
-    const account = demoAccounts.find((item) => item.username.toLocaleLowerCase("en") === username.trim().toLocaleLowerCase("en") && item.password === password);
-    if (!account) return false;
-    setActiveAccountId(account.id);
+  async function signIn(username: string, password: string): Promise<string | null> {
+    try {
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password }),
+      });
+      const payload = await response.json();
+      if (!response.ok) return payload.error || "تعذر تسجيل الدخول";
+      applySession(payload.user);
+      return null;
+    } catch {
+      return "تعذر الاتصال بالخادم";
+    }
+  }
+
+  function applySession(user: { id: number; fullName: string; role: string; specialty: string; username: string; mustChangePassword: boolean }) {
+    setSessionUser(user);
+    setActiveAccountId(accountForUser(user).id);
     const target = window.location.pathname === "/" ? "overview" : viewForPath(window.location.pathname);
     setView(target);
     setSignedIn(true);
     window.history.replaceState(null, "", VIEW_PATHS[target]);
     window.scrollTo(0, 0);
-    return true;
+  }
+
+  async function signOut() {
+    setSignedIn(false);
+    setSessionUser(null);
+    window.history.pushState(null, "", "/");
+    try {
+      await fetch("/api/auth/login", { method: "DELETE" });
+    } catch { /* the cookie is already dropped locally */ }
   }
 
   function activateSearchResult(result: GlobalSearchResult) {
@@ -1438,15 +1496,18 @@ export default function Home() {
     </section>
   </div>;
 
+  // Hold the door shut until the cookie has been checked, so a returning user
+  // never sees the login screen flash before their session is restored.
+  if (!sessionChecked) {
+    return <main className="session-splash"><span className="brand-mark" role="img" aria-label="شعار نظام البياتي" /><p>جارٍ التحقق من الجلسة...</p></main>;
+  }
+
   if (!signedIn) {
     return <>
       <LoginLanding
-        accounts={demoAccounts}
-        selectedId={activeAccountId}
         isInstalled={isInstalled}
         notificationPermission={notificationPermission}
-        onSelect={changeAccount}
-        onLogin={loginDemoAccount}
+        onLogin={signIn}
         onRequestAccount={() => { setSignedIn(true); setAccessOpen(true); }}
         onInstall={installApp}
         onEnableNotifications={enableNotifications}
@@ -1466,7 +1527,7 @@ export default function Home() {
           <p>القائمة الرئيسية</p>
           {navItems.map((item) => <button key={item.id} data-label={item.label} title={!sidebarExpanded ? item.label : undefined} className={view === item.id ? "active" : ""} onClick={() => navigateTo(item.id)}><Icon>{item.icon}</Icon><span>{item.label}</span>{item.id === "audit" && auditRows.length > 0 && <i className="nav-count">{auditRows.length}</i>}</button>)}
         </nav>
-        <div className="sidebar-bottom"><button data-label="مركز المساعدة" title={!sidebarExpanded ? "مركز المساعدة" : undefined} onClick={() => navigateTo("settings")}><Icon>؟</Icon><span>مركز المساعدة</span></button><button data-label="تسجيل الخروج" title={!sidebarExpanded ? "تسجيل الخروج" : undefined} onClick={() => { setSignedIn(false); window.history.pushState(null, "", "/"); }}><Icon>↪</Icon><span>تسجيل الخروج</span></button><div className="secure-chip"><span>✓</span><p><b>بياناتك محمية</b><small>آخر مزامنة: الآن</small></p></div></div>
+        <div className="sidebar-bottom"><button data-label="مركز المساعدة" title={!sidebarExpanded ? "مركز المساعدة" : undefined} onClick={() => navigateTo("settings")}><Icon>؟</Icon><span>مركز المساعدة</span></button><button data-label="تسجيل الخروج" title={!sidebarExpanded ? "تسجيل الخروج" : undefined} onClick={signOut}><Icon>↪</Icon><span>تسجيل الخروج</span></button><div className="secure-chip"><span>✓</span><p><b>بياناتك محمية</b><small>آخر مزامنة: الآن</small></p></div></div>
       </aside>
       {sidebarExpanded && <button type="button" className="sidebar-scrim" aria-label="إغلاق القائمة" onClick={() => setSidebarExpanded(false)} />}
 
@@ -1474,7 +1535,19 @@ export default function Home() {
         <header className="topbar">
           <div className="mobile-brand"><button type="button" className="menu-trigger" aria-label="إظهار القائمة الجانبية" onClick={() => setSidebarExpanded(true)}>☰</button><span className="brand-mark" role="img" aria-label="شعار نظام البياتي" /><b>البياتي</b></div>
           <label className="global-search"><span aria-hidden="true">⌕</span><input aria-label="البحث في النظام" value={globalSearch} onChange={(event) => { setGlobalSearch(event.target.value); setSearchOpen(true); }} onFocus={() => setSearchOpen(true)} onBlur={() => window.setTimeout(() => setSearchOpen(false), 150)} onKeyDown={(event) => { if (event.key === "Enter" && globalSearchResults[0]) activateSearchResult(globalSearchResults[0]); if (event.key === "Escape") setSearchOpen(false); }} placeholder="ابحث بالاسم أو رقم الملف أو القسم..." />{searchOpen && globalSearch.trim().length >= 2 && <div className="global-search-results" role="listbox">{globalSearchResults.length ? globalSearchResults.map((result) => <button type="button" role="option" aria-selected="false" key={result.id} onMouseDown={(event) => event.preventDefault()} onClick={() => activateSearchResult(result)}><span>{result.kind === "account" ? "ط" : result.kind === "patient" ? "م" : "←"}</span><p><b>{result.label}</b><small>{result.meta}</small></p></button>) : <p className="search-empty"><b>لا توجد نتيجة مطابقة</b><small>جرّب الاسم الكامل أو رقم الملف.</small></p>}</div>}</label>
-          <div className="top-actions"><span className="demo-chip">وضع تجريبي</span><button className="account-request-button" onClick={() => setAccessOpen(true)}>طلب حساب</button><button className="theme-button" aria-label="تبديل الوضع الليلي والنهاري" title="الوضع الليلي / النهاري" onClick={toggleTheme}><span className="theme-sun">☀</span><span className="theme-moon">☾</span></button><div className="notification-wrap"><button className="icon-button notification-button" aria-label="مركز الإشعارات" title="مركز الإشعارات" aria-expanded={notificationsOpen} onClick={() => setNotificationsOpen((open) => !open)}><span aria-hidden="true">🔔</span><i /></button>{notificationsOpen && <section className="notifications-panel"><div><b>مركز الإشعارات</b><small>{notificationPermission === "granted" ? "إشعارات الجهاز مفعّلة" : "تحتاج تفعيل إشعارات الجهاز"}</small></div>{(role === "admin" || role === "developer") && <article className="report-notification"><span>XL</span><p><b>تقرير الإدارة – آب 2026</b><small>Excel متكامل: لوحة، تشغيل يومي، أطباء ومالية.</small></p><a href={ADMIN_REPORT_URL} download="تقرير الإدارة العليا - آب 2026.xlsx">تنزيل</a></article>}<article><span>⇄</span><p><b>تسليم المناوبة</b><small>قائمة المرضى المستلمين جاهزة للمتابعة.</small></p></article><article><span>✓</span><p><b>آخر مزامنة مكتملة</b><small>تم حفظ تغييرات {currentRole.name} مع سجل المنفذ.</small></p></article>{notificationPermission !== "granted" && <button onClick={enableNotifications} disabled={notificationPermission === "unsupported"}>تفعيل إشعارات الجهاز</button>}</section>}</div><span className="divider" /><div className="role-picker"><span className="user-avatar">{currentRole.name.replace("د. ", "")[0] || "ب"}</span><div><b>{currentRole.name}</b><small>{currentRole.label}</small></div><select aria-label="تبديل الحساب التجريبي" value={activeAccountId} onChange={(event) => changeAccount(event.target.value)}>{demoAccounts.map((item) => <option key={item.id} value={item.id}>{item.name} — {item.label}</option>)}</select></div></div>
+          <div className="top-actions">{isDeveloper && <span className="demo-chip">معاينة المطور</span>}<button className="account-request-button" onClick={() => setAccessOpen(true)}>طلب حساب</button><button className="theme-button" aria-label="تبديل الوضع الليلي والنهاري" title="الوضع الليلي / النهاري" onClick={toggleTheme}><span className="theme-sun">☀</span><span className="theme-moon">☾</span></button><div className="notification-wrap"><button
+              className={`icon-button notification-button${notificationPermission === "granted" ? " enabled" : ""}`}
+              aria-label={notificationPermission === "granted" ? "مركز الإشعارات" : "تفعيل إشعارات الجهاز"}
+              title={notificationPermission === "granted" ? "مركز الإشعارات" : "اضغط لتفعيل إشعارات الجهاز"}
+              aria-expanded={notificationsOpen}
+              disabled={notificationPermission === "unsupported"}
+              onClick={() => {
+                // One tap does the obvious thing: turn notifications on if they
+                // are off, and open the centre once they are already on.
+                if (notificationPermission === "granted") setNotificationsOpen((open) => !open);
+                else enableNotifications();
+              }}
+            ><span aria-hidden="true">🔔</span><i /></button>{notificationsOpen && <section className="notifications-panel"><div><b>مركز الإشعارات</b><small>{notificationPermission === "granted" ? "إشعارات الجهاز مفعّلة" : "تحتاج تفعيل إشعارات الجهاز"}</small></div>{(role === "admin" || role === "developer") && <article className="report-notification"><span>XL</span><p><b>تقرير الإدارة – آب 2026</b><small>Excel متكامل: لوحة، تشغيل يومي، أطباء ومالية.</small></p><a href={ADMIN_REPORT_URL} download="تقرير الإدارة العليا - آب 2026.xlsx">تنزيل</a></article>}<article><span>⇄</span><p><b>تسليم المناوبة</b><small>قائمة المرضى المستلمين جاهزة للمتابعة.</small></p></article><article><span>✓</span><p><b>آخر مزامنة مكتملة</b><small>تم حفظ تغييرات {currentRole.name} مع سجل المنفذ.</small></p></article>{notificationPermission !== "granted" && <button onClick={enableNotifications} disabled={notificationPermission === "unsupported"}>تفعيل إشعارات الجهاز</button>}</section>}</div><span className="divider" /><div className="role-picker"><span className="user-avatar">{currentRole.name.replace("د. ", "")[0] || "ب"}</span><div><b>{currentRole.name}</b><small>{currentRole.label}</small></div>{sessionUser?.role === "مطور النظام" && <select aria-label="معاينة حساب آخر" value={activeAccountId} onChange={(event) => changeAccount(event.target.value)}>{demoAccounts.map((item) => <option key={item.id} value={item.id}>{item.name} — {item.label}</option>)}</select>}</div></div>
         </header>
         <main>{renderContent()}</main>
         <nav className="mobile-nav" aria-label="قائمة الهاتف">{navItems.slice(0, 4).map((item) => <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => navigateTo(item.id)}><Icon>{item.icon}</Icon><small>{item.label.split(" ")[0]}</small></button>)}</nav>

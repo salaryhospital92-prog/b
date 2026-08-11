@@ -1120,3 +1120,12 @@ main { padding-top: 42px; }
 .type-sizer { display: grid; visibility: hidden; pointer-events: none; user-select: none; }
 .type-sizer > span { grid-area: 1 / 1; }
 .type-line { min-width: 0; }
+
+/* Bell shows at a glance whether device notifications are on */
+.notification-button.enabled { color: var(--teal); }
+.notification-button.enabled > i { background: #22a06b; }
+.notification-button:not(.enabled) > i { background: #d98324; }
+.notification-button:disabled { opacity: .45; cursor: not-allowed; }
+
+.session-splash { min-height: 100dvh; display: grid; place-content: center; justify-items: center; gap: 15px; background: var(--cream); }
+.session-splash p { margin: 0; color: var(--muted); font-size: 10px; }

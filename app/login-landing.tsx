@@ -1,16 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
-type LoginAccount = { id: string; label: string; name: string; username: string; department: string };
+
 
 type LoginLandingProps = {
-  accounts: LoginAccount[];
-  selectedId: string;
   isInstalled: boolean;
   notificationPermission: NotificationPermission | "unsupported";
-  onSelect: (id: string) => void;
-  onLogin: (username: string, password: string) => boolean;
+  onLogin: (username: string, password: string) => Promise<string | null>;
   onRequestAccount: () => void;
   onInstall: (platform: "ios" | "android") => void;
   onEnableNotifications: () => void;
@@ -24,15 +21,15 @@ const features = [
   { title: "تقارير وإشعارات في وقتها", description: "ملخصات يومية وأسبوعية وشهرية، وتنبيهات مهمة تصل إلى جهاز الطبيب بعد تفعيلها." },
 ];
 
-export default function LoginLanding({ accounts, selectedId, isInstalled, notificationPermission, onSelect, onLogin, onRequestAccount, onInstall, onEnableNotifications, onToggleTheme }: LoginLandingProps) {
+export default function LoginLanding({ isInstalled, notificationPermission, onLogin, onRequestAccount, onInstall, onEnableNotifications, onToggleTheme }: LoginLandingProps) {
   const [featureIndex, setFeatureIndex] = useState(0);
   const [visibleCharacters, setVisibleCharacters] = useState(0);
   const [phase, setPhase] = useState<"typing" | "showing" | "deleting">("typing");
-  const [username, setUsername] = useState(() => accounts.find((account) => account.id === selectedId)?.username || "");
+  const [username, setUsername] = useState("");
+  const [signingIn, setSigningIn] = useState(false);
   const [password, setPassword] = useState("");
   const [loginError, setLoginError] = useState("");
   const activeFeature = features[featureIndex];
-  const selectedAccount = useMemo(() => accounts.find((account) => account.id === selectedId) || accounts[0], [accounts, selectedId]);
 
   useEffect(() => {
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -88,25 +85,26 @@ export default function LoginLanding({ accounts, selectedId, isInstalled, notifi
 
       <section className="login-access">
         <div className="login-toolbar"><span>نسخة المعاينة</span><button type="button" onClick={onToggleTheme} aria-label="تبديل الوضع الليلي والنهاري">◐</button></div>
-        <form className="login-card" onSubmit={(event) => {
+        <form className="login-card" onSubmit={async (event) => {
           event.preventDefault();
-          const accepted = onLogin(username, password);
-          if (!accepted) setLoginError("اسم المستخدم أو كلمة المرور غير صحيحة");
+          setSigningIn(true);
+          // The server decides; the browser never holds a password to compare against.
+          const failure = await onLogin(username, password);
+          setSigningIn(false);
+          if (failure) { setLoginError(failure); setPassword(""); }
         }}>
           <div className="login-card-head"><span className="login-mini-logo" /><p><small>مرحبًا بك في</small><b>نظام البياتي</b></p></div>
           <h2>تسجيل الدخول</h2>
-          <p className="login-intro">اختر حساب المعاينة لتجربة صلاحياته وبياناته المستقلة.</p>
-          <label className="login-account-field"><span>الحساب التجريبي</span><select value={selectedId} onChange={(event) => { const nextAccount = accounts.find((account) => account.id === event.target.value); onSelect(event.target.value); setUsername(nextAccount?.username || ""); setPassword(""); setLoginError(""); }}>{accounts.map((account) => <option key={account.id} value={account.id}>{account.name} — {account.label}</option>)}</select></label>
+          <p className="login-intro">أدخل اسم المستخدم وكلمة المرور الخاصين بك.</p>
           <div className="login-credentials">
             <label><span>اسم المستخدم</span><input dir="ltr" autoComplete="username" value={username} onChange={(event) => { setUsername(event.target.value); setLoginError(""); }} required /></label>
             <label><span>كلمة المرور</span><input dir="ltr" type="password" autoComplete="current-password" value={password} onChange={(event) => { setPassword(event.target.value); setLoginError(""); }} required placeholder="أدخل كلمة المرور" /></label>
           </div>
-          <div className="selected-account-preview"><span>{selectedAccount.name.replace("د. ", "")[0] || "ب"}</span><p><b>{selectedAccount.name}</b><small>{selectedAccount.label} · {selectedAccount.department}</small></p><i>جاهز</i></div>
           {loginError && <p className="login-error" role="alert">{loginError}</p>}
-          <button className="login-submit" type="submit">الدخول إلى الحساب <span>←</span></button>
+          <button className="login-submit" type="submit" disabled={signingIn}>{signingIn ? "جارٍ التحقق..." : "الدخول إلى الحساب"} <span>←</span></button>
           <button className="login-request" type="button" onClick={onRequestAccount}>ليس لديك حساب؟ طلب حساب جديد</button>
           <div className="login-notification-row"><span aria-hidden="true">🔔</span><p><b>إشعارات المناوبات</b><small>{notificationPermission === "granted" ? "مفعّلة على هذا الجهاز" : "فعّلها ليصلك ما يحتاج إجراءك"}</small></p><button type="button" onClick={onEnableNotifications} disabled={notificationPermission === "granted" || notificationPermission === "unsupported"}>{notificationPermission === "granted" ? "مفعّلة" : "تفعيل"}</button></div>
-          <small className="login-security">النسخة الرسمية تعتمد البريد الموافق عليه من رئيس المقيمين. الحسابات التجريبية ظاهرة مؤقتًا للاستماع إلى ملاحظات الإدارة.</small>
+          <small className="login-security">كلمة المرور تُفحص على الخادم ولا تُحفظ في المتصفح. بعد خمس محاولات خاطئة يتوقف الدخول ربع ساعة.</small>
         </form>
       </section>
     </main>
