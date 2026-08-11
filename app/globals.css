@@ -956,7 +956,7 @@ main { padding-top: 42px; }
 /* ---- Resident shift schedule ---- */
 .shift-panel { display: flex; flex-direction: column; gap: 15px; }
 .shift-month-picker { display: flex; flex-direction: column; gap: 5px; font-size: 8px; color: var(--muted); }
-.shift-month-picker select { min-height: 34px; padding: 0 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--card); color: inherit; font: inherit; font-size: 9px; }
+.shift-month-picker select { min-height: 34px; padding: 0 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--paper); color: inherit; font: inherit; font-size: 9px; }
 .shift-status { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 13px; border: 1px solid var(--line); background: var(--surface); }
 .shift-status > span { width: 31px; height: 31px; display: grid; place-items: center; border-radius: 10px; background: var(--teal-soft); color: var(--teal); font-size: 14px; }
 .shift-status p { margin: 0; display: flex; flex-direction: column; gap: 2px; }
@@ -964,7 +964,7 @@ main { padding-top: 42px; }
 .shift-status small { color: var(--muted); font-size: 8px; }
 .shift-status-published > span { background: #dff3e8; color: #1c7a4d; }
 .shift-status-drafting > span { background: #fdf1dd; color: #a4712a; }
-.shift-availability { display: flex; flex-direction: column; gap: 14px; padding: 19px; border-radius: 15px; border: 1px solid var(--line); background: var(--card); }
+.shift-availability { display: flex; flex-direction: column; gap: 14px; padding: 19px; border-radius: 15px; border: 1px solid var(--line); background: var(--paper); }
 .shift-chip { padding: 5px 11px; border-radius: 999px; background: var(--teal-soft); color: var(--teal); font-size: 8px; font-weight: 800; }
 .shift-day-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(52px, 1fr)); gap: 6px; }
 .shift-day { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; min-height: 46px; border-radius: 11px; border: 1px solid var(--line); background: var(--surface); color: inherit; cursor: pointer; transition: transform .12s ease, background .12s ease; }
@@ -977,7 +977,7 @@ main { padding-top: 42px; }
 .shift-quick-picks { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
 .shift-quick-picks button { min-height: 30px; padding: 0 12px; border-radius: 9px; border: 1px solid var(--line); background: var(--surface); color: inherit; font: inherit; font-size: 8px; font-weight: 700; cursor: pointer; }
 .shift-quick-picks span { margin-right: auto; color: var(--muted); font-size: 8px; }
-.shift-mine, .shift-submissions, .shift-share { padding: 15px; border-radius: 14px; border: 1px solid var(--line); background: var(--card); }
+.shift-mine, .shift-submissions, .shift-share { padding: 15px; border-radius: 14px; border: 1px solid var(--line); background: var(--paper); }
 .shift-mine b, .shift-submissions b, .shift-share b { display: block; font-size: 10px; margin-bottom: 9px; }
 .shift-mine ul, .shift-submissions ul, .shift-share-list { list-style: none; margin: 0; padding: 0; }
 .shift-mine li { display: flex; align-items: center; gap: 8px; min-height: 32px; border-top: 1px solid var(--line); font-size: 9px; }
@@ -997,7 +997,7 @@ main { padding-top: 42px; }
 .shift-preview { margin: 11px 0 0; padding: 13px; border-radius: 11px; background: var(--surface); border: 1px solid var(--line); color: var(--muted); font-family: ui-monospace, Consolas, monospace; font-size: 8px; line-height: 1.7; white-space: pre; overflow-x: auto; direction: ltr; text-align: right; }
 
 /* Branded roster board, matching the printed hospital rota layout */
-.roster-board { border-radius: 15px; border: 1px solid var(--line); background: var(--card); overflow: hidden; }
+.roster-board { border-radius: 15px; border: 1px solid var(--line); background: var(--paper); overflow: hidden; }
 .roster-brand { display: flex; align-items: center; gap: 11px; padding: 14px 16px; background: linear-gradient(135deg, var(--teal-dark), var(--teal)); color: #fff; }
 .roster-brand img { border-radius: 9px; background: rgba(255,255,255,.15); }
 .roster-brand div { display: flex; flex-direction: column; gap: 2px; }
@@ -1045,7 +1045,7 @@ main { padding-top: 42px; }
 /* ---- Inpatient day ledger, premature stays, paid vs expected ---- */
 .ledger-panel { display: flex; flex-direction: column; gap: 15px; }
 .ledger-totals { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 11px; }
-.ledger-total { display: flex; align-items: center; gap: 11px; padding: 14px; border-radius: 14px; border: 1px solid var(--line); background: var(--card); }
+.ledger-total { display: flex; align-items: center; gap: 11px; padding: 14px; border-radius: 14px; border: 1px solid var(--line); background: var(--paper); }
 .ledger-total > span { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 11px; font-size: 15px; }
 .ledger-total div { display: flex; flex-direction: column; gap: 2px; }
 .ledger-total small { color: var(--muted); font-size: 8px; }
@@ -1089,7 +1089,7 @@ main { padding-top: 42px; }
 .ledger-tags i { padding: 2px 7px; border-radius: 999px; font-style: normal; font-size: 7px; font-weight: 800; }
 .tag-premature { background: #f0dfca; color: #8a6240; }
 .tag-newborn { background: var(--teal-soft); color: var(--teal); }
-.ledger-tags button { min-height: 22px; padding: 0 8px; border-radius: 7px; border: 1px solid var(--line); background: var(--card); color: var(--muted); font: inherit; font-size: 7px; cursor: pointer; }
+.ledger-tags button { min-height: 22px; padding: 0 8px; border-radius: 7px; border: 1px solid var(--line); background: var(--paper); color: var(--muted); font: inherit; font-size: 7px; cursor: pointer; }
 .ledger-table td.ledger-doctor { padding: 6px; color: var(--muted); font-size: 8px; white-space: nowrap; }
 .ledger-table th.ledger-day { min-width: 34px; }
 .ledger-cell button { width: 100%; min-width: 34px; height: 32px; border: 0; background: transparent; color: inherit; font: inherit; font-size: 11px; cursor: pointer; }
@@ -1097,10 +1097,10 @@ main { padding-top: 42px; }
 .ledger-cell.paid { background: #dff3e8; color: #1c7a4d; }
 .ledger-cell.pending { background: #fdf1dd; color: #a4712a; }
 .ledger-cell.free { background: var(--surface); color: var(--muted); }
-.ledger-cell.unset { background: var(--card); color: #c3d0cb; }
+.ledger-cell.unset { background: var(--paper); color: #c3d0cb; }
 .ledger-cell.out { background: repeating-linear-gradient(135deg, transparent, transparent 4px, var(--surface) 4px, var(--surface) 8px); }
 
-.ledger-doctors { padding: 15px; border-radius: 14px; border: 1px solid var(--line); background: var(--card); }
+.ledger-doctors { padding: 15px; border-radius: 14px; border: 1px solid var(--line); background: var(--paper); }
 .ledger-doctors b { display: block; font-size: 10px; margin-bottom: 9px; }
 .ledger-doctors ul { list-style: none; margin: 0; padding: 0; }
 .ledger-doctors li { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; min-height: 34px; border-top: 1px solid var(--line); font-size: 9px; }
@@ -1141,7 +1141,7 @@ main { padding-top: 42px; }
 .user-avatar img { width: 100%; height: 100%; border-radius: inherit; object-fit: cover; }
 .user-avatar.large { width: 44px; height: 44px; font-size: 16px; flex-shrink: 0; }
 
-.account-panel { position: absolute; top: calc(100% + 9px); left: 0; z-index: 60; width: min(320px, calc(100vw - 32px)); display: flex; flex-direction: column; gap: 3px; padding: 11px; border-radius: 16px; border: 1px solid var(--line); background: var(--card); box-shadow: 0 20px 45px rgba(10,40,32,.16); }
+.account-panel { position: absolute; top: calc(100% + 9px); left: 0; z-index: 60; width: min(320px, calc(100vw - 32px)); display: flex; flex-direction: column; gap: 3px; padding: 11px; border-radius: 16px; border: 1px solid var(--line); background: var(--paper); box-shadow: 0 20px 45px rgba(10,40,32,.16); }
 .account-panel header { display: flex; align-items: center; gap: 10px; padding: 5px 5px 11px; border-bottom: 1px solid var(--line); margin-bottom: 5px; }
 .account-panel header div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .account-panel header b { font-size: 11px; }
@@ -1271,7 +1271,7 @@ main { padding-top: 42px; }
   padding: 4px;
   border-radius: 16px;
   border: 1px solid var(--line);
-  background: var(--card);
+  background: var(--paper);
   box-shadow: 0 1px 2px rgba(10,40,32,.05);
 }
 
@@ -1325,4 +1325,32 @@ main { padding-top: 42px; }
   .header-tab:hover .tab-label, .header-tab:focus-visible .tab-label { grid-template-columns: 0fr; opacity: 0; }
   .header-tab[aria-expanded="true"] { gap: 7px; padding-inline: 12px; }
   .header-tab[aria-expanded="true"] .tab-label { grid-template-columns: 1fr; opacity: 1; }
+}
+
+/* Account menu rows borrow the expanding-tab motion: the icon leads, the row
+   opens toward it on hover so the pointer target is obvious. */
+.account-panel > button {
+  --spring: cubic-bezier(.34, 1.4, .64, 1);
+  gap: 9px;
+  padding-inline: 10px;
+  transition: gap .34s var(--spring), padding-inline .34s var(--spring), background .2s ease, color .2s ease;
+}
+.account-panel > button:hover,
+.account-panel > button:focus-visible {
+  gap: 13px;
+  padding-inline: 14px;
+  background: var(--teal-soft);
+  color: var(--teal);
+  outline: none;
+}
+.account-panel > button:hover > span,
+.account-panel > button:focus-visible > span { background: var(--paper); }
+.account-panel > button.danger:hover,
+.account-panel > button.danger:focus-visible { background: #fbe9e5; color: #c2452f; }
+.account-panel > button > span { transition: transform .34s var(--spring), background .2s ease; }
+.account-panel > button:hover > span { transform: scale(1.08); }
+
+@media (prefers-reduced-motion: reduce) {
+  .account-panel > button, .account-panel > button > span { transition: none; }
+  .account-panel > button:hover > span { transform: none; }
 }

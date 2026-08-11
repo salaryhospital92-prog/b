@@ -198,6 +198,7 @@ export default function Home({ initialUser }: { initialUser: SessionUser | null 
   const [reportLoading, setReportLoading] = useState(true);
   const [reportData, setReportData] = useState<ReportData | null>(null);
   const [accessOpen, setAccessOpen] = useState(false);
+  const [resetToken, setResetToken] = useState("");
   const [accessSaving, setAccessSaving] = useState(false);
   const [accessRequests, setAccessRequests] = useState<AccessRequestRecord[]>([]);
   const [accessLoading, setAccessLoading] = useState(true);
@@ -461,6 +462,40 @@ export default function Home({ initialUser }: { initialUser: SessionUser | null 
     setSidebarExpanded(false);
   }
 
+  // Coming back from Google, Apple, or an emailed link: exchange the proof for
+  // a session, or offer to set a password when the link was a reset.
+  useEffect(() => {
+    if (signedIn && !window.location.search.includes("reset=1")) return;
+    let active = true;
+    (async () => {
+      try {
+        const supabase = await getSupabaseBrowser();
+        const { data } = await supabase.auth.getSession();
+        const accessToken = data.session?.access_token;
+        if (!accessToken || !active) return;
+        if (new URLSearchParams(window.location.search).get("reset") === "1") {
+          setResetToken(accessToken);
+          return;
+        }
+        const response = await fetch("/api/auth/oauth", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ accessToken }),
+        });
+        const payload = await response.json();
+        if (!active) return;
+        if (response.ok) {
+          await supabase.auth.signOut();
+          applySession(payload.user);
+        } else {
+          notify(payload.error || "تعذر تسجيل الدخول", "info");
+          if (payload.needsRequest) setAccessOpen(true);
+        }
+      } catch { /* no external session waiting */ }
+    })();
+    return () => { active = false; };
+  }, [signedIn]);
+
   useEffect(() => {
     function onPopState() {
       const next = viewForPath(window.location.pathname);
@@ -495,6 +530,45 @@ export default function Home({ initialUser }: { initialUser: SessionUser | null 
     setSignedIn(true);
     window.history.replaceState(null, "", VIEW_PATHS[target]);
     window.scrollTo(0, 0);
+  }
+
+  /** Google, Apple, or an emailed link — all end at the same server check. */
+  async function providerLogin(provider: "google" | "apple"): Promise<string | null> {
+    try {
+      const supabase = await getSupabaseBrowser();
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider,
+        options: { redirectTo: `${window.location.origin}/dashboard` },
+      });
+      if (!error) return null;
+      // Supabase says so plainly when a provider has not been switched on yet.
+      if (/not enabled|disabled|Unsupported provider/i.test(error.message)) {
+        return `الدخول عبر ${provider === "google" ? "Google" : "Apple"} غير مفعّل بعد في إعدادات النظام.`;
+      }
+      return error.message;
+    } catch {
+      return "تعذر بدء تسجيل الدخول";
+    }
+  }
+
+  async function sendEmailLink(email: string, purpose: "signin" | "reset"): Promise<string | null> {
+    try {
+      const supabase = await getSupabaseBrowser();
+      const { error } = await supabase.auth.signInWithOtp({
+        email,
+        options: {
+          emailRedirectTo: `${window.location.origin}/${purpose === "reset" ? "dashboard?reset=1" : "dashboard"}`,
+          shouldCreateUser: false,
+        },
+      });
+      if (!error) return null;
+      if (/not found|signups not allowed/i.test(error.message)) {
+        return "هذا البريد غير مسجل في النظام. اطلب حسابًا ليعتمده رئيس المقيمين.";
+      }
+      return error.message;
+    } catch {
+      return "تعذر إرسال الرابط";
+    }
   }
 
   async function signOut() {
@@ -1502,12 +1576,49 @@ export default function Home({ initialUser }: { initialUser: SessionUser | null 
     </section>
   </div>;
 
+  // The reset link lands here: prove-by-email already happened, so all that is
+  // left is choosing the new password.
+  if (resetToken) {
+    return <main className="reset-page">
+      <form className="login-card reset-card" onSubmit={async (event) => {
+        event.preventDefault();
+        const values = new FormData(event.currentTarget);
+        const newPassword = String(values.get("newPassword") || "");
+        if (newPassword !== String(values.get("confirmPassword") || "")) return notify("كلمتا المرور غير متطابقتين", "info");
+        const response = await fetch("/api/auth/oauth", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ accessToken: resetToken, newPassword }),
+        });
+        const payload = await response.json();
+        if (!response.ok) return notify(payload.error || "تعذر تعيين كلمة المرور", "info");
+        const supabase = await getSupabaseBrowser();
+        await supabase.auth.signOut();
+        setResetToken("");
+        window.history.replaceState(null, "", "/");
+        notify(payload.message);
+      }}>
+        <h2>تعيين كلمة مرور جديدة</h2>
+        <p className="login-intro">تحققنا من بريدك. اختر كلمة مرور جديدة لحسابك.</p>
+        <div className="login-credentials">
+          <label><span>كلمة المرور الجديدة</span><input name="newPassword" type="password" dir="ltr" autoComplete="new-password" minLength={8} required /></label>
+          <label><span>تأكيد كلمة المرور</span><input name="confirmPassword" type="password" dir="ltr" autoComplete="new-password" minLength={8} required /></label>
+        </div>
+        <button className="login-submit" type="submit">حفظ كلمة المرور <span>←</span></button>
+        <small className="login-security">ستُنهى جلساتك على الأجهزة الأخرى بعد التعيين.</small>
+      </form>
+      {toast && <div className={`toast ${toast.kind}`}><span>{toast.kind === "success" ? "✓" : "i"}</span>{toast.message}</div>}
+    </main>;
+  }
+
   if (!signedIn) {
     return <>
       <LoginLanding
         isInstalled={isInstalled}
         notificationPermission={notificationPermission}
         onLogin={signIn}
+        onProviderLogin={providerLogin}
+        onEmailLink={sendEmailLink}
         onRequestAccount={() => setAccessOpen(true)}
         onInstall={installApp}
         onEnableNotifications={enableNotifications}
