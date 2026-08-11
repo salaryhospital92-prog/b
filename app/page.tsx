@@ -7,6 +7,7 @@ import LoginLanding from "./login-landing";
 import ResidentWorkflow from "./resident-workflow";
 
 type Role = "doctor" | "chief" | "accounts" | "admin" | "developer";
+type DemoAccount = { id: string; role: Role; label: string; name: string; username: string; password: string; department: string };
 type View = "overview" | "handover" | "days" | "workLogs" | "objections" | "audit" | "payments" | "reports" | "settings" | "registry" | "personalSalary" | "capabilities" | "accessRequests" | "attendance";
 type Toast = { message: string; kind: "success" | "info" } | null;
 type PatientRecord = { id: number; fullName: string; fileNumber: string; department: string; admissionDate: string; paymentCategory: string; entryType: string; patientStatus: string; billingMode: string; attendingDoctor?: string | null; isNewborn?: boolean; newbornCount?: number };
@@ -46,90 +47,50 @@ type PresenceRecord = { employeeId: number; fullName: string; role: string; spec
 type AttendanceSession = { id: number; employeeId: number; employeeName: string; clockInAt: string; clockOutAt?: string | null; clockInSource: string; clockOutSource?: string | null };
 type OperationalTask = { id: number; title: string; status: string; priority: string; dueAt?: string | null; assigneeName: string };
 type AttendanceData = { summary: { present: number; total: number; arrivalsToday: number; activeLast15Minutes: number; openTasks: number }; presence: PresenceRecord[]; sessions: AttendanceSession[]; tasks: OperationalTask[] };
-type TelegramStatusData = { botUsername: string; configuration: { tokenConfigured: boolean; secretConfigured: boolean; publicUrlConfigured: boolean; webhookReady: boolean }; linkedAccounts: { id: number; employeeId: number; employeeName: string; employeeRole: string; username?: string | null; status: string; isBotAdmin: boolean; pairedAt: string; lastSeenAt: string }[]; recentUpdates: { updateId: number; employeeName?: string | null; command?: string | null; status: string; error?: string | null; receivedAt: string; processedAt?: string | null }[]; openTasks: number; botAdmins: { employeeName: string; username?: string | null; lastSeenAt: string }[]; pendingAdminRequests: { id: number; username?: string | null; displayName?: string | null; requestedAt: string }[]; bootstrapAdmins: { employeeName: string; username: string; status: string; verifiedAt?: string | null }[] };
+type TelegramStatusData = { botUsername: string; configuration: { tokenConfigured: boolean; secretConfigured: boolean; publicUrlConfigured: boolean; webhookReady: boolean }; linkedAccounts: { id: number; employeeId: number; employeeName: string; employeeRole: string; username?: string | null; status: string; isBotAdmin: boolean; pairedAt: string; lastSeenAt: string }[]; recentUpdates: { updateId: number; employeeName?: string | null; command?: string | null; status: string; error?: string | null; receivedAt: string; processedAt?: string | null }[]; openTasks: number; botAdmins: { employeeName: string; username?: string | null; lastSeenAt: string }[]; pendingAdminRequests: { id: number; username?: string | null; displayName?: string | null; requestedAt: string }[]; bootstrapAdmins: { employeeName: string; username?: string | null; phoneNumber: string; status: string; verifiedAt?: string | null }[] };
 type TelegramLink = { code: string; employeeName: string; expiresAt: string; deepLink: string } | null;
 
 const IQD = new Intl.NumberFormat("en-US");
 const money = (value: number) => `${IQD.format(value)} د.ع`;
 const ADMIN_REPORT_URL = "/reports/albayati-admin-august-2026.xlsx";
 
-const recentDays: DoctorDay[] = [
-  { id: 1, day: "الأحد", date: "10 آب 2026", status: "معتمد", amount: 245000, tone: "approved", details: "8 استشاريات · ولادة طبيعية · 3 حالات رقود" },
-  { id: 2, day: "السبت", date: "9 آب 2026", status: "تدشيك الراتب", amount: 190000, tone: "pending", details: "6 استشاريات · عملية قيصرية" },
-  { id: 3, day: "الخميس", date: "7 آب 2026", status: "معتمد", amount: 220000, tone: "approved", details: "10 استشاريات · حالتا رقود" },
-  { id: 4, day: "الأربعاء", date: "6 آب 2026", status: "أُعيد للمراجعة", amount: 125000, tone: "returned", details: "5 استشاريات · إثبات ناقص" },
-];
+const recentDays: DoctorDay[] = [];
+
+function emptyDoctorProfile(firstName: string): DoctorProfile {
+  return {
+    firstName,
+    currentSalary: 0,
+    previousSalary: 0,
+    growth: 0,
+    consultationAmount: 0,
+    consultationCount: 0,
+    procedureAmount: 0,
+    operationCount: 0,
+    inpatientCount: 0,
+    bars: Array(12).fill(4),
+    days: [],
+    insight: "الحساب جاهز لبدء تسجيل أول مناوبة.",
+    highlight: "ستظهر التحليلات بعد إضافة بيانات حقيقية.",
+    alertTitle: "لا توجد تنبيهات",
+    alertBody: "جميع البيانات التشغيلية تبدأ من الصفر.",
+  };
+}
 
 const doctorProfiles: Record<string, DoctorProfile> = {
-  "doctor-ahmed": {
-    firstName: "أحمد", currentSalary: 2845000, previousSalary: 2530000, growth: 12.4,
-    consultationAmount: 1040000, consultationCount: 104, procedureAmount: 1805000, operationCount: 18, inpatientCount: 24,
-    bars: [42, 56, 38, 68, 52, 76, 64, 86, 72, 92, 78, 96], days: recentDays,
-    insight: "أداؤك هذا الشهر أعلى من متوسط آخر 3 أشهر.", highlight: "أنت قريب من تحقيق أعلى راتب شهري لك.",
-    alertTitle: "تنبيه مهم", alertBody: "لديك يوم عمل أُعيد بسبب نقص صورة إثبات واحدة.",
-  },
-  "doctor-fanar": {
-    firstName: "فنار", currentSalary: 2310000, previousSalary: 2190000, growth: 5.5,
-    consultationAmount: 820000, consultationCount: 82, procedureAmount: 1490000, operationCount: 12, inpatientCount: 19,
-    bars: [58, 46, 62, 54, 70, 66, 74, 61, 78, 82, 76, 88],
-    days: [
-      { id: 11, day: "الأحد", date: "10 آب 2026", status: "معتمد", amount: 230000, tone: "approved", details: "7 استشاريات · ولادة طبيعية · حالتا رقود" },
-      { id: 12, day: "الجمعة", date: "8 آب 2026", status: "بانتظار التدقيق", amount: 160000, tone: "pending", details: "8 استشاريات · حالة خاصة موثقة" },
-      { id: 13, day: "الثلاثاء", date: "5 آب 2026", status: "معتمد", amount: 195000, tone: "approved", details: "5 استشاريات · قيصرية · 3 حالات رقود" },
-    ],
-    insight: "سجلاتك أكثر انتظامًا من الشهر الماضي.", highlight: "متوسط إكمال الإثباتات لديك بلغ 98%.",
-    alertTitle: "اعتراض مدقق", alertBody: "تم قبول اعتراضك الأخير وإضافة الفرق إلى كشف آب.",
-  },
-  "doctor-tabarak": {
-    firstName: "تبارك", currentSalary: 1980000, previousSalary: 1850000, growth: 7,
-    consultationAmount: 760000, consultationCount: 76, procedureAmount: 1220000, operationCount: 9, inpatientCount: 16,
-    bars: [36, 48, 44, 60, 57, 66, 63, 74, 69, 80, 77, 85],
-    days: [
-      { id: 21, day: "السبت", date: "9 آب 2026", status: "معتمد", amount: 205000, tone: "approved", details: "9 استشاريات · ولادتان طبيعيتان" },
-      { id: 22, day: "الأربعاء", date: "6 آب 2026", status: "بانتظار التدقيق", amount: 175000, tone: "pending", details: "6 استشاريات · قيصرية · حالة رقود" },
-      { id: 23, day: "الاثنين", date: "4 آب 2026", status: "معتمد", amount: 145000, tone: "approved", details: "4 استشاريات · 3 حالات رقود" },
-    ],
-    insight: "زمن إدخال سجلاتك تحسن بمقدار 18 دقيقة.", highlight: "جميع استشارياتك هذا الأسبوع مرفقة بالإثباتات.",
-    alertTitle: "حساب مكتمل", alertBody: "لا توجد لديك صور ناقصة أو أيام معادة للمراجعة.",
-  },
-  "doctor-shahd": {
-    firstName: "شهد", currentSalary: 2640000, previousSalary: 2380000, growth: 10.9,
-    consultationAmount: 920000, consultationCount: 92, procedureAmount: 1720000, operationCount: 15, inpatientCount: 22,
-    bars: [45, 52, 64, 59, 73, 68, 82, 77, 88, 84, 93, 97],
-    days: [
-      { id: 31, day: "الأحد", date: "10 آب 2026", status: "بانتظار التدقيق", amount: 235000, tone: "pending", details: "11 استشارية · قيصرية · حالتا رقود" },
-      { id: 32, day: "الخميس", date: "7 آب 2026", status: "معتمد", amount: 215000, tone: "approved", details: "8 استشاريات · ولادة طبيعية · حالتان خاصتان" },
-      { id: 33, day: "الثلاثاء", date: "5 آب 2026", status: "أُعيد للمراجعة", amount: 155000, tone: "returned", details: "7 استشاريات · تعديل وقت الكول مطلوب" },
-    ],
-    insight: "عدد الحالات التي تابعتها ارتفع هذا الشهر.", highlight: "أنت الأعلى في استلام المرضى عبر تسليم المناوبات.",
-    alertTitle: "يحتاج متابعة", alertBody: "عدّلي وقت كول يوم 5 آب ليعاد احتسابه تلقائيًا.",
-  },
+  "doctor-fanar": emptyDoctorProfile("فنار"),
+  "doctor-tabarak": emptyDoctorProfile("تبارك"),
+  "doctor-shahd": emptyDoctorProfile("شهد"),
 };
 
-const auditSeed = [
-  { id: 1, doctor: "د. سارة محمود", avatar: "س", date: "10 آب 2026", procedures: "12 استشارية · 2 ولادة", entered: 285000, cap: 250000, over: true, wait: "منذ 18 دقيقة" },
-  { id: 2, doctor: "د. أحمد البياتي", avatar: "أ", date: "10 آب 2026", procedures: "8 استشاريات · 3 رقود", entered: 245000, cap: 250000, over: false, wait: "منذ 42 دقيقة" },
-  { id: 3, doctor: "د. مريم حسن", avatar: "م", date: "9 آب 2026", procedures: "6 استشاريات · 1 قيصرية", entered: 190000, cap: 200000, over: false, wait: "منذ ساعتين" },
-  { id: 4, doctor: "د. يوسف كريم", avatar: "ي", date: "9 آب 2026", procedures: "15 استشارية", entered: 150000, cap: 200000, over: true, wait: "منذ 3 ساعات" },
-];
+const auditSeed: { id: number; doctor: string; avatar: string; date: string; procedures: string; entered: number; cap: number; over: boolean; wait: string }[] = [];
+const paymentSeed: { id: number; patient: string; file: string; admission: string; days: string[] }[] = [];
 
-const paymentSeed = [
-  { id: 1, patient: "زينب علي", file: "P-1048", admission: "8 آب", days: ["paid", "paid", "pending", "none", "none"] },
-  { id: 2, patient: "هدى فاضل", file: "P-1045", admission: "7 آب", days: ["free", "free", "none", "none", "none"] },
-  { id: 3, patient: "نور جاسم", file: "P-1039", admission: "6 آب", days: ["paid", "paid", "paid", "paid", "none"] },
-  { id: 4, patient: "رنا كامل", file: "P-1032", admission: "5 آب", days: ["pending", "pending", "pending", "none", "none"] },
-];
-
-const demoAccounts: { id: string; role: Role; label: string; name: string }[] = [
-  { id: "doctor-ahmed", role: "doctor", label: "طبيب مقيم", name: "د. أحمد البياتي" },
-  { id: "doctor-fanar", role: "doctor", label: "طبيب مقيم", name: "د. فنار" },
-  { id: "doctor-tabarak", role: "doctor", label: "طبيب مقيم", name: "د. تبارك" },
-  { id: "doctor-shahd", role: "doctor", label: "طبيب مقيم", name: "د. شهد" },
-  { id: "accounts-salma", role: "accounts", label: "الحسابات", name: "سلمى نزار" },
-  { id: "accounts-zahraa", role: "accounts", label: "الحسابات", name: "زهراء علي" },
-  { id: "chief-layla", role: "chief", label: "رئيس المقيمين", name: "د. ليلى قاسم" },
-  { id: "admin-head", role: "admin", label: "الإدارة العليا · رئاسة القسم", name: "رئاسة القسم" },
-  { id: "developer-system", role: "developer", label: "مطور النظام", name: "مطور النظام" },
+const demoAccounts: DemoAccount[] = [
+  { id: "admin-mustafa", role: "admin", label: "الإدارة العليا", name: "مصطفى البياتي", username: "mustafa", password: "Mustafa123", department: "رئاسة القسم" },
+  { id: "doctor-shahd", role: "doctor", label: "طبيب مقيم", name: "د. شهد", username: "shahd", password: "Shahd123", department: "الردهة والرقود" },
+  { id: "doctor-tabarak", role: "doctor", label: "طبيب مقيم", name: "د. تبارك", username: "tabarak", password: "Tabarak123", department: "الاستشارية" },
+  { id: "doctor-fanar", role: "doctor", label: "طبيب مقيم", name: "د. فنار", username: "fanar", password: "Fanar123", department: "صالة الولادة" },
+  { id: "developer-system", role: "developer", label: "مطور النظام · معاينة جميع الحسابات", name: "Admin", username: "Admin", password: "Ahmed123", department: "إدارة النظام" },
 ];
 
 function Icon({ children }: { children: string }) {
@@ -150,7 +111,7 @@ function StatusPill({ tone, children }: { tone: string; children: React.ReactNod
 
 export default function Home() {
   const [signedIn, setSignedIn] = useState(false);
-  const [activeAccountId, setActiveAccountId] = useState("doctor-ahmed");
+  const [activeAccountId, setActiveAccountId] = useState("admin-mustafa");
   const [view, setView] = useState<View>("overview");
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
   const [auditRows, setAuditRows] = useState(auditSeed);
@@ -180,8 +141,8 @@ export default function Home() {
   const [handover, setHandover] = useState<HandoverRecord | null>(null);
   const [handoverCandidates, setHandoverCandidates] = useState<PatientRecord[]>([]);
   const [selectedPatientIds, setSelectedPatientIds] = useState<number[]>([]);
-  const [handoverFromDoctor, setHandoverFromDoctor] = useState("د. سارة محمود");
-  const [handoverToDoctor, setHandoverToDoctor] = useState("د. أحمد البياتي");
+  const [handoverFromDoctor, setHandoverFromDoctor] = useState("د. شهد");
+  const [handoverToDoctor, setHandoverToDoctor] = useState("د. تبارك");
   const [reportPeriod, setReportPeriod] = useState<"daily" | "weekly" | "monthly">("daily");
   const [reportDate, setReportDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [reportLoading, setReportLoading] = useState(true);
@@ -199,7 +160,7 @@ export default function Home() {
 
   const currentRole = demoAccounts.find((item) => item.id === activeAccountId) || demoAccounts[0];
   const role = currentRole.role;
-  const doctorProfile = doctorProfiles[activeAccountId] || doctorProfiles["doctor-ahmed"];
+  const doctorProfile = doctorProfiles[activeAccountId] || doctorProfiles["doctor-fanar"];
   const newbornNames = buildNewbornNames(patientName, newbornCount);
 
   const navItems = useMemo(() => {
@@ -312,6 +273,16 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    if (!signedIn) return;
+    const frame = window.requestAnimationFrame(() => {
+      window.scrollTo(0, 0);
+      document.documentElement.scrollTop = 0;
+      document.body.scrollTop = 0;
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [view, activeAccountId, signedIn]);
+
+  useEffect(() => {
     const standaloneNavigator = navigator as Navigator & { standalone?: boolean };
     const statusTimer = window.setTimeout(() => {
       setIsInstalled(window.matchMedia("(display-mode: standalone)").matches || standaloneNavigator.standalone === true);
@@ -415,6 +386,16 @@ export default function Home() {
     setActiveAccountId(nextAccountId);
     setView("overview");
     setSidebarExpanded(false);
+  }
+
+  function loginDemoAccount(username: string, password: string) {
+    const account = demoAccounts.find((item) => item.username.toLocaleLowerCase("en") === username.trim().toLocaleLowerCase("en") && item.password === password);
+    if (!account) return false;
+    setActiveAccountId(account.id);
+    setView("overview");
+    setSignedIn(true);
+    window.scrollTo(0, 0);
+    return true;
   }
 
   function activateSearchResult(result: GlobalSearchResult) {
@@ -920,23 +901,23 @@ export default function Home() {
   }
 
   function renderAdminDashboard() {
-    const chart = [45, 58, 52, 72, 64, 83, 76, 94];
+    const chart = Array(8).fill(4);
     return (
       <>
-        <section className="welcome-row"><div><p className="eyebrow">نظرة تنفيذية · آب 2026</p><h1>لوحة قيادة مستشفى البياتي</h1><p className="muted">ملخص لحظي للأداء الطبي والمالي.</p></div><button className="secondary-action report-download-button" onClick={downloadAdminReport}><span>XL</span> تنزيل تقرير Excel</button></section>
+        <section className="welcome-row"><div><p className="eyebrow">الإدارة العليا · رئاسة القسم</p><h1>مرحبًا، مصطفى البياتي</h1><p className="muted">بدأت النسخة التجريبية ببيانات تشغيلية صفرية وجاهزة للإدخال الحقيقي.</p></div><button className="secondary-action report-download-button" onClick={downloadAdminReport}><span>XL</span> تنزيل تقرير Excel</button></section>
         <section className="stat-row executive">
-          <article><span className="stat-symbol green">↗</span><div><small>إجمالي العوائد</small><strong>{money(48650000)}</strong><em>↑ 8.7% عن تموز</em></div></article>
-          <article><span className="stat-symbol blue">♙</span><div><small>المرضى هذا الشهر</small><strong>342</strong><em>معدل إشغال 81%</em></div></article>
-          <article><span className="stat-symbol amber">✦</span><div><small>مستحقات الأطباء</small><strong>{money(18240000)}</strong><em>24 طبيبًا مقيمًا</em></div></article>
-          <article><span className="stat-symbol red">⌛</span><div><small>ذمم قيد التحصيل</small><strong>{money(3980000)}</strong><em>انخفضت 4.2%</em></div></article>
+          <article><span className="stat-symbol green">↗</span><div><small>إجمالي العوائد</small><strong>{money(0)}</strong><em>بانتظار أول حركة مالية</em></div></article>
+          <article><span className="stat-symbol blue">♙</span><div><small>المرضى هذا الشهر</small><strong>0</strong><em>لا توجد حالات مسجلة</em></div></article>
+          <article><span className="stat-symbol amber">✦</span><div><small>مستحقات الأطباء</small><strong>{money(0)}</strong><em>3 حسابات أطباء جاهزة</em></div></article>
+          <article><span className="stat-symbol red">⌛</span><div><small>ذمم قيد التحصيل</small><strong>{money(0)}</strong><em>لا توجد دفعات معلقة</em></div></article>
         </section>
         <section className="content-grid admin-grid">
-          <article className="panel chart-panel"><div className="panel-head"><div><h2>اتجاه العوائد</h2><p>آخر 8 أشهر · بالمليون دينار</p></div><StatusPill tone="approved">نمو مستقر</StatusPill></div>
-            <div className="bar-chart">{chart.map((height, i) => <div key={i}><span style={{ height: `${height}%` }}><i>{Math.round(height / 2)}</i></span><small>{["ك2", "ش", "آذ", "ن", "أي", "ح", "ت", "آب"][i]}</small></div>)}</div>
+          <article className="panel chart-panel"><div className="panel-head"><div><h2>اتجاه العوائد</h2><p>يبدأ الرسم من أول حركة مالية حقيقية</p></div><StatusPill tone="approved">بيانات صفرية</StatusPill></div>
+            <div className="bar-chart">{chart.map((height, i) => <div key={i}><span style={{ height: `${height}%` }}><i>0</i></span><small>{["ك2", "ش", "آذ", "ن", "أي", "ح", "ت", "آب"][i]}</small></div>)}</div>
           </article>
-          <aside className="panel mix-panel"><div className="panel-head"><div><h2>توزيع الإجراءات</h2><p>1–11 آب</p></div></div><div className="donut" aria-label="توزيع الإجراءات"><div><strong>488</strong><small>إجراء</small></div></div><ul className="legend"><li><i className="teal-dot" />استشاريات <b>62%</b></li><li><i className="orange-dot" />عمليات <b>23%</b></li><li><i className="sand-dot" />رقود <b>15%</b></li></ul></aside>
+          <aside className="panel mix-panel"><div className="panel-head"><div><h2>توزيع الإجراءات</h2><p>لا توجد إجراءات بعد</p></div></div><div className="donut empty" aria-label="لا توجد إجراءات"><div><strong>0</strong><small>إجراء</small></div></div><ul className="legend"><li><i className="teal-dot" />استشاريات <b>0%</b></li><li><i className="orange-dot" />عمليات <b>0%</b></li><li><i className="sand-dot" />رقود <b>0%</b></li></ul></aside>
         </section>
-        <section className="panel admin-alerts"><div className="panel-head"><div><h2>مؤشرات تحتاج متابعة</h2><p>يرتبها مساعد البياتي حسب الأثر المالي</p></div><span className="ai-tag">✦ تحليل ذكي</span></div><div className="alert-grid"><div><span className="stat-symbol red">!</span><p><b>3 حالات دفع غير مكتملة</b><small>قد تؤخر توزيع {money(270000)} من أجور الرقود.</small></p><button onClick={() => setView("payments")}>متابعة ←</button></div><div><span className="stat-symbol amber">↑</span><p><b>ارتفاع القيصريات 14%</b><small>مقارنة بمتوسط الأشهر الثلاثة الماضية.</small></p><button onClick={() => setView("reports")}>التفاصيل ←</button></div></div></section>
+        <section className="panel admin-alerts"><div className="panel-head"><div><h2>مؤشرات تحتاج متابعة</h2><p>ستظهر التنبيهات بعد بدء العمل الفعلي</p></div><span className="ai-tag">✦ جاهز للتحليل</span></div><div className="report-empty"><span>✓</span><p><b>لا توجد مؤشرات معلقة</b><small>المرضى والرواتب والمصروفات والدفعات تبدأ جميعها من الصفر.</small></p></div></section>
       </>
     );
   }
@@ -1025,7 +1006,7 @@ export default function Home() {
                   <label className="form-field"><span>نوع الدخول <b>*</b></span><select name="entryType" required value={patientEntryType} onChange={(event) => { setPatientEntryType(event.target.value); setPatientInitialPrice(getInitialPrice(event.target.value)); if (!event.target.value.includes("ولادة") && !event.target.value.includes("قيصرية")) setNewbornCount(0); }}><option>استشارية</option><option>رقود</option><option>ولادة طبيعية</option><option>عملية قيصرية</option></select></label>
                   <label className="form-field"><span>{patientEntryType === "رقود" ? "تسعيرة يوم الرقود" : "التسعيرة الأولية"} (د.ع)</span><input name="initialPrice" type="number" min="0" step="1000" value={patientInitialPrice} onChange={(event) => setPatientInitialPrice(Number(event.target.value))} /></label>
                   <label className="form-field"><span>القسم الطبي <b>*</b></span><select name="department" required defaultValue=""><option value="" disabled>اختر القسم</option><option>النسائية والتوليد</option><option>الجراحة العامة</option><option>الطب الباطني</option><option>طب الأطفال</option><option>الطوارئ</option><option>العناية المركزة</option></select></label>
-                  <label className="form-field"><span>الطبيب المسؤول</span><select name="attendingDoctor" defaultValue=""><option value="">يُحدد لاحقًا</option><option>د. ليلى قاسم</option><option>د. أحمد البياتي</option><option>د. سارة محمود</option><option>د. مريم حسن</option></select></label>
+                  <label className="form-field"><span>الطبيب المسؤول</span><select name="attendingDoctor" defaultValue=""><option value="">يُحدد لاحقًا</option><option>د. شهد</option><option>د. تبارك</option><option>د. فنار</option></select></label>
                   <label className="form-field"><span>تصنيف الدفع <b>*</b></span><select name="paymentCategory" required defaultValue="نقدي"><option>نقدي</option><option>مجاني</option><option>تأمين</option><option>آجل</option></select></label>
                   {(patientEntryType === "ولادة طبيعية" || patientEntryType === "عملية قيصرية") && <label className="form-field"><span>عدد المواليد</span><select name="newbornCount" value={newbornCount} onChange={(event) => setNewbornCount(Number(event.target.value))}><option value="0">يُسجل لاحقًا</option><option value="1">مولود واحد</option><option value="2">توأم</option><option value="3">ثلاثة توائم</option><option value="4">أربعة توائم</option></select></label>}
                   <label className="form-field full"><span>ملاحظات أولية</span><textarea name="notes" rows={3} placeholder="الحالة عند الدخول أو أي معلومات مهمة للكادر..." /></label>
@@ -1067,7 +1048,7 @@ export default function Home() {
   }
 
   function renderHandover() {
-    const doctorOptions = ["د. أحمد البياتي", "د. سارة محمود", "د. مريم حسن", "د. يوسف كريم"];
+    const doctorOptions = ["د. شهد", "د. تبارك", "د. فنار"];
     const receivedPatients = handover?.patients ?? [];
     const handoverTime = handover?.shiftEndedAt
       ? new Date(handover.shiftEndedAt).toLocaleString("ar-IQ-u-nu-latn", { dateStyle: "medium", timeStyle: "short" })
@@ -1140,6 +1121,10 @@ export default function Home() {
       !query || `${employee.fullName} ${employee.role} ${employee.specialty}`.toLocaleLowerCase("ar").includes(query),
     );
     const configuration = telegramStatus?.configuration;
+    const authorizedBotAdmins = telegramStatus?.bootstrapAdmins.length ? telegramStatus.bootstrapAdmins : [
+      { employeeName: "مصطفى البياتي", username: "dr_mustafa_albayati", phoneNumber: "+9647705693132", status: "بانتظار تطبيق قاعدة البيانات" },
+      { employeeName: "مدير بوت معتمد", username: null, phoneNumber: "+9647884669922", status: "بانتظار تطبيق قاعدة البيانات" },
+    ];
     return <>
       <section className="page-title operations-heading">
         <div><p className="eyebrow">الإدارة العليا · بيانات تشغيلية مباشرة</p><h1>الحضور والنشاط وبوت البياتي</h1><p>تعرف من يوجد في المستشفى الآن، ووقت حضوره، وآخر عملية نفذها، سواء من الموقع أو Telegram.</p></div>
@@ -1162,8 +1147,8 @@ export default function Home() {
       </section>
 
       <section className="bot-admin-grid">
-        <article className="panel bot-admin-card"><div className="panel-head"><div><h2>مدير البوت الأساسي</h2><p>تحقق مزدوج من اسم Telegram والرقم المسجل</p></div><StatusPill tone={telegramStatus?.bootstrapAdmins[0]?.status === "تم التحقق" ? "approved" : "pending"}>{telegramStatus?.bootstrapAdmins[0]?.status || "بانتظار تطبيق قاعدة البيانات"}</StatusPill></div><div className="bot-admin-person"><span className="record-avatar employee">م</span><p><b>د. مصطفى البياتي</b><small>@Dr_mustafa_albayati · +964 770 569 3132</small></p><em>{telegramStatus?.bootstrapAdmins[0]?.status === "تم التحقق" ? "مدير بوت فعّال" : "يرسل Start ثم يشارك رقمه من الزر"}</em></div></article>
-        <article className="panel bot-admin-card"><div className="panel-head"><div><h2>حساب Start الآخر</h2><p>لا تُمنح الصلاحية لمستخدم مجهول تلقائيًا</p></div><span className="request-count">{IQD.format(telegramStatus?.pendingAdminRequests.length || 0)}</span></div>{telegramStatus?.pendingAdminRequests.length ? telegramStatus.pendingAdminRequests.slice(0, 3).map((request) => <div className="bot-admin-person compact" key={request.id}><span>#{IQD.format(request.id)}</span><p><b>{request.displayName || "حساب Telegram"}</b><small>{request.username ? `@${request.username}` : "بلا اسم مستخدم"} · ينتظر موافقة مدير البوت</small></p></div>) : <div className="bot-admin-empty"><span>✓</span><p><b>لا يوجد طلب مستلم بعد</b><small>بعد تشغيل البوت وإرسال Start يظهر الحساب هنا، ويوافق عليه د. مصطفى من أزرار البوت.</small></p></div>}</article>
+        <article className="panel bot-admin-card"><div className="panel-head"><div><h2>مديرو البوت المعتمدون</h2><p>الدخول لا يكتمل إلا بعد مشاركة الرقم من حساب Telegram نفسه</p></div><span className="request-count">{IQD.format(authorizedBotAdmins.length)}</span></div>{authorizedBotAdmins.map((admin) => <div className="bot-admin-person" key={admin.phoneNumber}><span className="record-avatar employee">{admin.employeeName[0]}</span><p><b>{admin.employeeName}</b><small>{admin.username ? `@${admin.username} · ` : ""}<span dir="ltr">{admin.phoneNumber}</span></small></p><em>{admin.status === "تم التحقق" ? "مدير بوت فعّال" : "يرسل Start ثم يشارك رقمه"}</em></div>)}</article>
+        <article className="panel bot-admin-card"><div className="panel-head"><div><h2>سياسة الوصول إلى البوت</h2><p>لا توجد موافقات تلقائية ولا طلبات عامة</p></div><StatusPill tone="approved">مقيد</StatusPill></div><div className="bot-admin-empty"><span>✓</span><p><b>المستخدم غير المسجل يُرفض مباشرة</b><small>تظهر له رسالة «لا تمتلك الصلاحيات»، ولا تُنشأ له هوية أو صلاحية داخل النظام.</small></p></div></article>
       </section>
 
       {telegramLink && <section className="panel telegram-link-card">
@@ -1206,7 +1191,7 @@ export default function Home() {
 
   function renderSettings() {
     const doctors = [
-      ["د. أحمد البياتي", "10", "200,000"], ["د. سارة محمود", "12", "250,000"], ["د. مريم حسن", "10", "200,000"], ["د. يوسف كريم", "8", "180,000"],
+      ["د. شهد", "0", "0"], ["د. تبارك", "0", "0"], ["د. فنار", "0", "0"],
     ];
     return <><section className="page-title"><div><p className="eyebrow">قواعد العمل</p><h1>{role === "admin" ? "إدارة النظام" : "سقوف الأطباء"}</h1><p>تُطبّق القيم فورًا على الحسابات الجديدة مع حفظ سجل التعديل.</p></div><StatusPill tone="approved">المحرك يعمل</StatusPill></section><section className="panel caps-panel"><div className="panel-head"><div><h2>السقوف الفردية</h2><p>الاستشاريات منفصلة عن سقف العمليات والرقود</p></div><button className="secondary-action" onClick={() => notify("حُفظت جميع إعدادات السقوف")}>حفظ التغييرات</button></div><div className="caps-table"><div className="caps-head"><span>الطبيب</span><span>أقصى استشاريات/يوم</span><span>السقف اليومي</span><span>آخر تحديث</span></div>{doctors.map((doctor, index) => <div className="caps-row" key={doctor[0]}><span className="doctor-cell"><i className="doctor-avatar">{doctor[0][3]}</i><b>{doctor[0]}</b></span><label><input defaultValue={doctor[1]} /><small>استشارية</small></label><label><input defaultValue={doctor[2]} /><small>د.ع</small></label><span className="muted">{index < 2 ? "اليوم" : "4 آب 2026"}</span></div>)}</div></section></>;
   }
@@ -1340,7 +1325,7 @@ export default function Home() {
         isInstalled={isInstalled}
         notificationPermission={notificationPermission}
         onSelect={changeAccount}
-        onLogin={() => setSignedIn(true)}
+        onLogin={loginDemoAccount}
         onRequestAccount={() => { setSignedIn(true); setAccessOpen(true); }}
         onInstall={installApp}
         onEnableNotifications={enableNotifications}

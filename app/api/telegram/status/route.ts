@@ -11,7 +11,7 @@ export async function GET(request: Request) {
       supabase.from("telegram_updates").select("update_id,chat_id,employee_id,command,status,error_message,received_at,processed_at").order("received_at", { ascending: false }).limit(12),
       supabase.from("operational_tasks").select("id", { count: "exact", head: true }).neq("status", "مكتملة").neq("status", "ملغاة"),
       supabase.from("telegram_bot_admin_requests").select("id,username,display_name,status,requested_at").order("requested_at", { ascending: false }).limit(20),
-      supabase.from("telegram_bot_admin_allowlist").select("employee_id,telegram_username,status,verified_at").limit(20),
+      supabase.from("telegram_bot_admin_allowlist").select("employee_id,telegram_username,phone_number,status,verified_at").limit(20),
     ]);
     const firstError = accountsResult.error || updatesResult.error || tasksResult.error || adminRequestsResult.error || allowlistResult.error;
     if (firstError) throw firstError;
@@ -73,6 +73,7 @@ export async function GET(request: Request) {
       bootstrapAdmins: (allowlistResult.data || []).map((row) => ({
         employeeName: employeeMap.get(Number(row.employee_id))?.name || "د. مصطفى البياتي",
         username: row.telegram_username,
+        phoneNumber: row.phone_number,
         status: row.status,
         verifiedAt: row.verified_at,
       })),

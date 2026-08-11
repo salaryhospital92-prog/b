@@ -217,23 +217,10 @@ async function registerUnlinkedStart(message: TelegramMessage): Promise<CommandR
       };
     }
   }
-
-  const { data: existing, error: existingError } = await supabase.from("telegram_bot_admin_requests").select("id,status")
-    .eq("telegram_user_id", message.from.id).maybeSingle();
-  if (existingError) throw existingError;
-  if (!existing) {
-    const { error } = await supabase.from("telegram_bot_admin_requests").insert({
-      telegram_user_id: message.from.id,
-      chat_id: message.chat.id,
-      username: message.from.username || null,
-      display_name: telegramDisplayName(message.from),
-      status: "بانتظار الموافقة",
-    });
-    if (error) throw error;
-  } else if (existing.status === "مرفوض") {
-    return { text: "طلب إدارة البوت لهذا الحساب مرفوض. راجع مدير البوت أو إدارة المستشفى." };
-  }
-  return { text: "تم تسجيل الحساب الذي أرسل Start كطلب إدارة معلّق. سيظهر لد. مصطفى ليوافق عليه من زر «طلبات مديري البوت»." };
+  return {
+    text: "لا تمتلك الصلاحيات لاستخدام بوت البياتي. إذا كان رقمك معتمدًا مسبقًا من الإدارة، اضغط زر التحقق وشارك رقم حسابك أنت.",
+    replyMarkup: telegramContactVerificationKeyboard(),
+  };
 }
 
 async function verifyBootstrapAdmin(message: TelegramMessage): Promise<CommandResult> {
@@ -242,14 +229,14 @@ async function verifyBootstrapAdmin(message: TelegramMessage): Promise<CommandRe
     return { text: "يجب مشاركة رقم حسابك أنت، وليس جهة اتصال لشخص آخر." };
   }
   const username = message.from.username?.toLowerCase() || "";
-  if (!username) return { text: "يجب أن يكون اسم مستخدم Telegram المعتمد ظاهرًا على الحساب." };
+  const phoneNumber = normalizePhoneNumber(message.contact.phone_number);
   const supabase = getSupabaseAdmin();
-  const { data: allowed, error } = await supabase.from("telegram_bot_admin_allowlist").select("id,employee_id,phone_number,status")
-    .ilike("telegram_username", username).maybeSingle();
+  const { data: allowed, error } = await supabase.from("telegram_bot_admin_allowlist").select("id,employee_id,telegram_username,phone_number,status")
+    .eq("phone_number", phoneNumber).maybeSingle();
   if (error) throw error;
-  if (!allowed || allowed.status === "ملغى") return { text: "هذا الحساب غير موجود ضمن قائمة مديري بوت البياتي." };
-  if (normalizePhoneNumber(message.contact.phone_number) !== normalizePhoneNumber(String(allowed.phone_number))) {
-    return { text: "الرقم المشارك لا يطابق الرقم المعتمد لمدير البوت." };
+  if (!allowed || allowed.status === "ملغى") return { text: "لا تمتلك الصلاحيات لاستخدام بوت البياتي." };
+  if (allowed.telegram_username && String(allowed.telegram_username).toLowerCase() !== username) {
+    return { text: "لا تمتلك الصلاحيات لاستخدام بوت البياتي. اسم الحساب لا يطابق الحساب المعتمد لهذا الرقم." };
   }
 
   await supabase.from("telegram_accounts").delete().eq("employee_id", allowed.employee_id);
@@ -642,7 +629,7 @@ async function processMessage(message: TelegramMessage): Promise<CommandResult> 
     };
     return registerUnlinkedStart(message);
   }
-  if (!employee) return { text: "هذا الحساب غير مربوط بالنظام. أرسل /start لتسجيل طلبك أو استخدم رمز الربط الذي تمنحه الإدارة." };
+  if (!employee) return { text: "لا تمتلك الصلاحيات لاستخدام بوت البياتي. راجع إدارة المستشفى لربط حسابك." };
   return executeCommand(employee, message, command);
 }
 

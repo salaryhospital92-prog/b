@@ -889,6 +889,57 @@ main { padding-top: 42px; }
   .telegram-control { grid-template-columns: 45px minmax(0, 1fr); padding: 15px; }.telegram-control-icon { width: 45px; height: 45px; border-radius: 13px; font-size: 20px; }.telegram-control-copy h2 { font-size: 16px; }.telegram-control-copy > p:last-child { font-size: 11px; }.telegram-readiness { grid-template-columns: 1fr; }.telegram-readiness b { grid-column: auto; }.bot-admin-person { grid-template-columns: 38px minmax(0, 1fr); }.bot-admin-person em { grid-column: 2; }.operations-kpis { grid-template-columns: 1fr 1fr; gap: 8px; }.operations-kpis article { min-height: 96px; grid-template-columns: 34px minmax(0, 1fr); padding: 11px; }.operations-kpis article > span { width: 34px; height: 34px; }.operations-kpis strong { font-size: 18px; }.presence-row { grid-template-columns: 1fr; }.presence-state { align-items: flex-start; }.presence-activity, .presence-source, .presence-actions { grid-column: auto; }.presence-actions { grid-template-columns: 1fr; }.attendance-history > div:last-child > div, .operations-tasks > div:last-child > div { grid-template-columns: 31px minmax(0, 1fr); }.attendance-history em, .operations-tasks .status { grid-column: 2; justify-self: start; }
 }
 
+/* Final interaction and contrast pass for both themes */
+.login-credentials { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 11px; }
+.login-credentials label { min-width: 0; display: flex; flex-direction: column; gap: 7px; }
+.login-credentials span { color: var(--ink); font-size: 12px; font-weight: 700; }
+.login-credentials input { width: 100%; min-height: 48px; padding-inline: 12px; border: 1px solid var(--line); border-radius: 11px; outline: 0; background: var(--surface); color: var(--ink); font-size: 14px; }
+.login-credentials input:focus { border-color: var(--teal); box-shadow: 0 0 0 3px color-mix(in srgb, var(--teal) 15%, transparent); }
+.login-error { margin: 8px 0 0; padding: 9px 11px; border: 1px solid color-mix(in srgb, #b33d34 34%, var(--line)); border-radius: 9px; background: color-mix(in srgb, #b33d34 9%, var(--paper)); color: #a3352e; font-size: 11px; font-weight: 700; }
+
+.primary-action,
+.report-download-button,
+.registry-submit .primary-action {
+  border: 1px solid #08745d;
+  background: linear-gradient(135deg, #0b8468, #07644f);
+  color: #ffffff;
+  box-shadow: 0 9px 20px rgba(7, 100, 79, .18);
+}
+.primary-action:hover,
+.report-download-button:hover { border-color: #075b48; background: linear-gradient(135deg, #08745d, #075b48); color: #ffffff; }
+.primary-action:disabled,
+.report-download-button:disabled { border-color: var(--line); background: var(--surface); color: color-mix(in srgb, var(--muted) 82%, var(--ink)); box-shadow: none; opacity: 1; cursor: not-allowed; }
+.secondary-action { border-color: color-mix(in srgb, var(--teal) 34%, var(--line)); background: var(--paper); color: var(--teal-dark); }
+.donut.empty { background: conic-gradient(var(--surface) 0 100%); }
+.theme-button,
+.icon-button,
+.menu-trigger { border-color: color-mix(in srgb, var(--teal) 28%, var(--line)); background: var(--paper); color: var(--teal-dark); }
+
+:root[data-theme="dark"] .secondary-action { border-color: #4e806f; background: #173a31; color: #d9f2e8; }
+:root[data-theme="dark"] .primary-action:disabled,
+:root[data-theme="dark"] .report-download-button:disabled { border-color: #31564b; background: #1c4036; color: #9db9af; }
+:root[data-theme="dark"] .login-error { border-color: #74453f; background: #3c2825; color: #ffc0b8; }
+
+@media (max-width: 900px) {
+  .main-column > main { min-height: calc(100dvh - 68px); padding-top: 24px; }
+  .main-column > main > :first-child { margin-top: 0; }
+  .app-shell .mobile-nav button { color: #526d65; }
+  .app-shell .mobile-nav button:not(.active) { background: color-mix(in srgb, var(--surface) 42%, transparent); }
+  .app-shell .mobile-nav button.active { border-color: #08745d; background: #08745d; color: #ffffff; }
+  :root[data-theme="dark"] .app-shell .mobile-nav button:not(.active) { border-color: #294a40; background: #173a31; color: #c5d8d1; }
+  :root[data-theme="dark"] .app-shell .mobile-nav button.active { border-color: #6ed0ad; background: #6ed0ad; color: #062b24; }
+  .operations-heading,
+  .report-heading { align-items: stretch; }
+}
+
+@media (max-width: 520px) {
+  .login-credentials { grid-template-columns: 1fr; }
+  .login-credentials input { font-size: 16px; }
+  .app-shell .mobile-nav { gap: 5px; padding-inline: 8px; }
+  .app-shell .mobile-nav button { min-height: 57px; border-radius: 12px; }
+  .app-shell .mobile-nav small { font-size: 10px; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .login-feature-copy h1 i { animation: none; }.login-feature-copy p { opacity: 1; transform: none; transition: none; }
 }

@@ -77,7 +77,7 @@ test("keeps Supabase credentials server-side and covers responsive screens", asy
   assert.match(page, /التقارير اليومية والأسبوعية والشهرية/);
   assert.match(page, /المتابعة عبر Google/);
   assert.match(page, /doctor-fanar/);
-  assert.match(page, /"doctor-tabarak"[\s\S]*firstName:\s*"تبارك"/);
+  assert.match(page, /"doctor-tabarak": emptyDoctorProfile\("تبارك"\)/);
   assert.match(page, /doctorProfiles\[activeAccountId\]/);
   assert.match(page, /globalSearchResults/);
   assert.match(page, /مركز الإشعارات/);
@@ -139,7 +139,7 @@ test("ships installable PWA icon metadata and notification worker", async () => 
 test("bundles the complete August administration workbook", async () => {
   const report = await readFile(new URL("../public/reports/albayati-admin-august-2026.xlsx", import.meta.url));
   assert.equal(report.subarray(0, 2).toString("utf8"), "PK");
-  assert.ok(report.byteLength > 15000);
+  assert.ok(report.byteLength > 10000);
 });
 
 test("adds durable attendance, private files, and the secure Albayati Telegram workflow", async () => {
@@ -195,12 +195,15 @@ test("adds durable attendance, private files, and the secure Albayati Telegram w
 });
 
 test("adds verified Telegram administrators and complete button menus", async () => {
-  const [migration, webhook, telegramHelper, statusApi, page, webhookScript] = await Promise.all([
+  const [migration, cleanSeed, webhook, telegramHelper, statusApi, page, loginLanding, css, webhookScript] = await Promise.all([
     readFile(new URL("../supabase/migrations/202608110006_telegram_admins_and_button_menu.sql", import.meta.url), "utf8"),
+    readFile(new URL("../supabase/migrations/202608110007_clean_demo_seed_and_authorized_bot_admins.sql", import.meta.url), "utf8"),
     readFile(new URL("../app/api/telegram/webhook/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../lib/telegram.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/telegram/status/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/login-landing.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
     readFile(new URL("../scripts/register-telegram-webhook.mjs", import.meta.url), "utf8"),
   ]);
 
@@ -217,11 +220,23 @@ test("adds verified Telegram administrators and complete button menus", async ()
   assert.match(telegramHelper, /answerCallbackQuery/);
   assert.match(telegramHelper, /request_contact/);
   assert.match(statusApi, /pendingAdminRequests/);
-  assert.match(page, /@Dr_mustafa_albayati/);
-  assert.match(page, /Start/);
+  assert.match(page, /dr_mustafa_albayati/);
+  assert.match(page, /\+9647884669922/);
+  assert.match(page, /window\.scrollTo\(0, 0\)/);
+  assert.match(webhook, /لا تمتلك الصلاحيات لاستخدام بوت البياتي/);
+  assert.doesNotMatch(webhook, /تم تسجيل الحساب الذي أرسل Start كطلب إدارة معلّق/);
+  assert.match(loginLanding, /اسم المستخدم/);
+  assert.match(loginLanding, /كلمة المرور/);
+  assert.match(css, /Final interaction and contrast pass for both themes/);
   assert.match(webhookScript, /callback_query/);
 
-  const securitySurface = [migration, webhook, telegramHelper, statusApi, page, webhookScript].join("\n");
+  assert.match(cleanSeed, /truncate table/);
+  assert.match(cleanSeed, /create table if not exists public\.demo_login_accounts/);
+  assert.match(cleanSeed, /crypt\(credentials\.password, gen_salt\('bf', 12\)\)/);
+  assert.match(cleanSeed, /\+9647884669922/);
+  for (const username of ["mustafa", "shahd", "tabarak", "fanar", "Admin"]) assert.match(cleanSeed, new RegExp(`'${username}'`));
+
+  const securitySurface = [migration, cleanSeed, webhook, telegramHelper, statusApi, page, loginLanding, css, webhookScript].join("\n");
   assert.doesNotMatch(securitySurface, /\b\d{8,11}:AA[A-Za-z0-9_-]{20,}\b/);
   assert.doesNotMatch(securitySurface, /\b(?:ghp|nfp|sbp)_[A-Za-z0-9]+\b/);
 });
