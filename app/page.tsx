@@ -6,10 +6,11 @@ import { getSupabaseBrowser } from "../lib/supabase-browser";
 import LoginLanding from "./login-landing";
 import ResidentWorkflow from "./resident-workflow";
 import ShiftSchedule from "./shift-schedule";
+import InpatientDays from "./inpatient-days";
 
 type Role = "doctor" | "chief" | "accounts" | "admin" | "developer";
 type DemoAccount = { id: string; role: Role; label: string; name: string; username: string; password: string; department: string };
-type View = "overview" | "handover" | "days" | "workLogs" | "objections" | "audit" | "payments" | "reports" | "settings" | "registry" | "personalSalary" | "capabilities" | "accessRequests" | "attendance" | "shifts";
+type View = "overview" | "handover" | "days" | "workLogs" | "objections" | "audit" | "payments" | "reports" | "settings" | "registry" | "personalSalary" | "capabilities" | "accessRequests" | "attendance" | "shifts" | "inpatientDays";
 type Toast = { message: string; kind: "success" | "info" } | null;
 type PatientRecord = { id: number; fullName: string; fileNumber: string; department: string; admissionDate: string; paymentCategory: string; entryType: string; patientStatus: string; billingMode: string; attendingDoctor?: string | null; isNewborn?: boolean; newbornCount?: number };
 type EmployeeRecord = { id: number; fullName: string; employeeNumber: string; role: string; specialty: string; status: string };
@@ -180,6 +181,7 @@ export default function Home() {
       { id: "shifts" as View, label: "جدول المناوبات", icon: "◷" },
       { id: "workLogs" as View, label: "سجل المناوبات", icon: "▤" },
       { id: "objections" as View, label: "اعتراضاتي", icon: "!" },
+      { id: "inpatientDays" as View, label: "أيام الرقود", icon: "▣" },
       { id: "reports" as View, label: "كشف الحساب", icon: "▥" },
       { id: "capabilities" as View, label: "دليل مهامي", icon: "؟" },
     ];
@@ -189,6 +191,7 @@ export default function Home() {
       { id: "shifts" as View, label: "جدول المناوبات", icon: "◷" },
       { id: "workLogs" as View, label: "سجلات الأطباء", icon: "▤" },
       { id: "objections" as View, label: "الاعتراضات", icon: "!" },
+      { id: "inpatientDays" as View, label: "أيام الرقود", icon: "▣" },
       { id: "personalSalary" as View, label: "راتبي الشخصي", icon: "◇" },
       { id: "audit" as View, label: "التدقيق والاعتماد", icon: "✓" },
       { id: "accessRequests" as View, label: "إدارة الحسابات", icon: "♙" },
@@ -201,6 +204,7 @@ export default function Home() {
       { id: "registry" as View, label: "تسجيل مريض", icon: "✚" },
       { id: "workLogs" as View, label: "سجلات المناوبات", icon: "▤" },
       { id: "payments" as View, label: "حالات الدفع", icon: "¤" },
+      { id: "inpatientDays" as View, label: "أيام الرقود والخدج", icon: "▣" },
       { id: "reports" as View, label: "المطابقات", icon: "▥" },
       { id: "capabilities" as View, label: "دليل المهام", icon: "؟" },
     ];
@@ -212,6 +216,7 @@ export default function Home() {
       { id: "workLogs" as View, label: "سجلات المناوبات", icon: "▤" },
       { id: "reports" as View, label: "التقارير الشاملة", icon: "▥" },
       { id: "payments" as View, label: "البحث عن مريض", icon: "⌕" },
+      { id: "inpatientDays" as View, label: "أيام الرقود والخدج", icon: "▣" },
       { id: "settings" as View, label: "إدارة النظام", icon: "⚙" },
       { id: "capabilities" as View, label: "دليل الصلاحيات", icon: "؟" },
     ];
@@ -1358,6 +1363,7 @@ export default function Home() {
     if (view === "handover") return renderHandover();
     if (view === "attendance") return renderAttendance();
     if (view === "shifts") return <ShiftSchedule accountName={currentRole.name} notify={notify} />;
+    if (view === "inpatientDays") return <InpatientDays accountName={currentRole.name} role={role} notify={notify} />;
     if (view === "personalSalary") return renderPersonalSalary();
     if (view === "settings") return renderSettings();
     if (view === "reports") return renderReports();

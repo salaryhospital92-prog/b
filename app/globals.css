@@ -1041,3 +1041,75 @@ main { padding-top: 42px; }
 .roster-demo-head .ghost-action { margin-right: auto; min-height: 30px; font-size: 8px; }
 .roster-demo-head .ghost-action + .ghost-action { margin-right: 0; }
 .roster-table td.roster-slot span { display: block; font-size: 9px; font-weight: 600; }
+
+/* ---- Inpatient day ledger, premature stays, paid vs expected ---- */
+.ledger-panel { display: flex; flex-direction: column; gap: 15px; }
+.ledger-totals { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 11px; }
+.ledger-total { display: flex; align-items: center; gap: 11px; padding: 14px; border-radius: 14px; border: 1px solid var(--line); background: var(--card); }
+.ledger-total > span { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 11px; font-size: 15px; }
+.ledger-total div { display: flex; flex-direction: column; gap: 2px; }
+.ledger-total small { color: var(--muted); font-size: 8px; }
+.ledger-total b { font-size: 14px; }
+.ledger-total em { color: var(--muted); font-style: normal; font-size: 8px; }
+.ledger-total.paid > span { background: #dff3e8; color: #1c7a4d; }
+.ledger-total.pending > span { background: #fdf1dd; color: #a4712a; }
+.ledger-total.free > span { background: var(--surface); color: var(--muted); }
+.ledger-hint { margin: 0; padding: 10px 13px; border-radius: 11px; background: var(--teal-soft); color: var(--teal); font-size: 9px; line-height: 1.7; }
+
+.incubator-panel { padding: 15px; border-radius: 14px; border: 1px solid #e8dfd1; background: linear-gradient(135deg, #f8f3ea, #f5f8f3); }
+.incubator-head { display: flex; align-items: center; gap: 10px; }
+.incubator-head > span { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 10px; background: #f0dfca; font-size: 15px; }
+.incubator-head div { display: flex; flex-direction: column; gap: 2px; }
+.incubator-head b { font-size: 10px; }
+.incubator-head small { color: var(--muted); font-size: 8px; }
+.incubator-head i { margin-right: auto; padding: 4px 11px; border-radius: 999px; background: #f0dfca; color: #8a6240; font-style: normal; font-size: 9px; font-weight: 800; }
+.incubator-panel ul { list-style: none; margin: 11px 0 0; padding: 0; }
+.incubator-panel li { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; min-height: 34px; border-top: 1px solid rgba(121,93,61,.14); font-size: 9px; }
+.incubator-panel li b { font-size: 9px; }
+.incubator-panel li span { color: var(--muted); font-size: 8px; }
+.incubator-panel li i { padding: 3px 9px; border-radius: 999px; background: #fff; color: #8a6240; font-style: normal; font-size: 8px; font-weight: 800; }
+.incubator-panel li em { color: var(--muted); font-style: normal; font-size: 8px; }
+.incubator-panel li small { width: 100%; color: var(--muted); font-size: 7px; }
+
+.ledger-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; }
+.ledger-controls button { min-height: 30px; padding: 0 13px; border-radius: 9px; border: 1px solid var(--line); background: var(--surface); color: inherit; font: inherit; font-size: 8px; font-weight: 700; cursor: pointer; }
+.ledger-controls button.active { background: var(--teal); border-color: var(--teal); color: #fff; }
+.ledger-controls span, .ledger-controls em { color: var(--muted); font-style: normal; font-size: 8px; }
+.ledger-controls em { margin-right: auto; }
+
+.ledger-scroll { overflow-x: auto; border-radius: 14px; border: 1px solid var(--line); }
+.ledger-table { border-collapse: collapse; width: 100%; font-size: 9px; }
+.ledger-table th, .ledger-table td { border: 1px solid var(--line); padding: 0; text-align: center; }
+.ledger-table thead th { background: #243342; color: #fff; padding: 6px 4px; font-size: 8px; font-weight: 700; }
+.ledger-table th.ledger-name, .ledger-table td.ledger-name { min-width: 168px; text-align: right; padding: 7px 9px; background: var(--surface); position: sticky; right: 0; z-index: 1; }
+.ledger-table thead th.ledger-name { background: #243342; }
+.ledger-table td.ledger-name b { display: block; font-size: 9px; }
+.ledger-table td.ledger-name small { display: block; color: var(--muted); font-size: 7px; }
+.ledger-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin-top: 4px; }
+.ledger-tags i { padding: 2px 7px; border-radius: 999px; font-style: normal; font-size: 7px; font-weight: 800; }
+.tag-premature { background: #f0dfca; color: #8a6240; }
+.tag-newborn { background: var(--teal-soft); color: var(--teal); }
+.ledger-tags button { min-height: 22px; padding: 0 8px; border-radius: 7px; border: 1px solid var(--line); background: var(--card); color: var(--muted); font: inherit; font-size: 7px; cursor: pointer; }
+.ledger-table td.ledger-doctor { padding: 6px; color: var(--muted); font-size: 8px; white-space: nowrap; }
+.ledger-table th.ledger-day { min-width: 34px; }
+.ledger-cell button { width: 100%; min-width: 34px; height: 32px; border: 0; background: transparent; color: inherit; font: inherit; font-size: 11px; cursor: pointer; }
+.ledger-cell button:disabled { cursor: default; }
+.ledger-cell.paid { background: #dff3e8; color: #1c7a4d; }
+.ledger-cell.pending { background: #fdf1dd; color: #a4712a; }
+.ledger-cell.free { background: var(--surface); color: var(--muted); }
+.ledger-cell.unset { background: var(--card); color: #c3d0cb; }
+.ledger-cell.out { background: repeating-linear-gradient(135deg, transparent, transparent 4px, var(--surface) 4px, var(--surface) 8px); }
+
+.ledger-doctors { padding: 15px; border-radius: 14px; border: 1px solid var(--line); background: var(--card); }
+.ledger-doctors b { display: block; font-size: 10px; margin-bottom: 9px; }
+.ledger-doctors ul { list-style: none; margin: 0; padding: 0; }
+.ledger-doctors li { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; min-height: 34px; border-top: 1px solid var(--line); font-size: 9px; }
+.ledger-doctors li i { padding: 3px 9px; border-radius: 999px; font-style: normal; font-size: 8px; font-weight: 800; }
+.ledger-doctors li i.paid { background: #dff3e8; color: #1c7a4d; }
+.ledger-doctors li i.pending { background: #fdf1dd; color: #a4712a; }
+.ledger-doctors li em { margin-right: auto; color: var(--muted); font-style: normal; font-size: 8px; }
+
+@media (max-width: 720px) {
+  .ledger-table th.ledger-name, .ledger-table td.ledger-name { min-width: 130px; position: static; }
+  .ledger-controls em { width: 100%; margin: 0; }
+}

@@ -5,6 +5,37 @@ export const PROCEDURE_PRICES = {
   "استشارية": 10000,
 } as const;
 
+/** What one inpatient day pays the attending doctor once the family settles it. */
+export const INPATIENT_DAY_FEE = 25000;
+
+/** The only three states an inpatient day can be in. */
+export const DAY_PAYMENT_STATES = ["مدفوع", "لم تدفع بعد", "مجاني"] as const;
+export type DayPaymentState = (typeof DAY_PAYMENT_STATES)[number];
+
+/**
+ * A day earns the doctor his fee only once it is paid; an unpaid day is still
+ * worth something but stays pending, and a free day is worth nothing at all.
+ */
+export function dayFeeSplit(status: DayPaymentState) {
+  if (status === "مدفوع") return { paid: INPATIENT_DAY_FEE, pending: 0 };
+  if (status === "لم تدفع بعد") return { paid: 0, pending: INPATIENT_DAY_FEE };
+  return { paid: 0, pending: 0 };
+}
+
+/** Totals a doctor's inpatient days into the actual and the still-expected column. */
+export function summariseInpatientDays(days: { status: DayPaymentState }[]) {
+  return days.reduce((totals, day) => {
+    const split = dayFeeSplit(day.status);
+    return {
+      paid: totals.paid + split.paid,
+      pending: totals.pending + split.pending,
+      paidDays: totals.paidDays + (day.status === "مدفوع" ? 1 : 0),
+      pendingDays: totals.pendingDays + (day.status === "لم تدفع بعد" ? 1 : 0),
+      freeDays: totals.freeDays + (day.status === "مجاني" ? 1 : 0),
+    };
+  }, { paid: 0, pending: 0, paidDays: 0, pendingDays: 0, freeDays: 0 });
+}
+
 /** Upper bound on a single birth; anything higher is a data-entry slip, not a delivery. */
 export const MAX_NEWBORNS = 10;
 
@@ -47,7 +78,7 @@ export function calculateDailyCompensation(input: {
 }) {
   const consultationEntered = input.consultations * PROCEDURE_PRICES["استشارية"];
   const consultationApproved = Math.min(input.consultations, input.maxConsultations) * PROCEDURE_PRICES["استشارية"];
-  const combinedEntered = input.births * 80000 + input.cesareans * 120000 + input.paidInpatients * 25000;
+  const combinedEntered = input.births * 80000 + input.cesareans * 120000 + input.paidInpatients * INPATIENT_DAY_FEE;
   const combinedApproved = Math.min(combinedEntered, input.combinedCap);
   return {
     enteredTotal: consultationEntered + combinedEntered,
