@@ -171,10 +171,13 @@ test("adds durable attendance, private files, and the secure Albayati Telegram w
   assert.match(filesApi, /createSignedUrls/);
   assert.match(filesApi, /file_attachments/);
   assert.match(telegramWebhook, /x-telegram-bot-api-secret-token/);
-  assert.match(telegramWebhook, /\/checkin/);
-  assert.match(telegramWebhook, /\/patient/);
-  assert.match(telegramWebhook, /\/handover/);
-  assert.match(telegramWebhook, /\/attach/);
+  // The bot is button-driven: every capability is a guided flow, not a typed command.
+  assert.match(telegramHelper, /menu:checkin/);
+  const flowCommands = telegramWebhook.match(/const FLOW_COMMANDS = new Set\(\[(.+?)\]\)/)?.[1] || "";
+  for (const flow of ["task", "followup", "done", "patient", "handover", "attach", "linkstaff"]) {
+    assert.ok(flowCommands.includes(`"${flow}"`), `${flow} is not a guided flow`);
+    assert.match(telegramWebhook, new RegExp(`"menu:${flow}"|${flow}: \\{`));
+  }
   assert.match(telegramWebhook, /operational_tasks/);
   assert.match(telegramStatus, /webhookReady/);
   assert.match(telegramLink, /expiresAt/);

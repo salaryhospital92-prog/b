@@ -19,33 +19,40 @@ async function telegramRequest<T>(method: string, body: Record<string, unknown>)
   return result.result as T;
 }
 
-export function telegramMainKeyboard(isBotAdmin = false): TelegramReplyMarkup {
-  const keyboard = [
-    [{ text: "تسجيل حضور" }, { text: "تسجيل انصراف" }],
-    [{ text: "حالتي" }, { text: "من موجود الآن" }],
-    [{ text: "مهامي" }, { text: "إضافة مهمة" }],
-    [{ text: "متابعة مهمة" }, { text: "إنهاء مهمة" }],
-    [{ text: "تسجيل مريض" }, { text: "تسليم مناوبة" }],
-    [{ text: "إرفاق ملف" }, { text: "قائمة الأوامر" }],
-  ];
-  if (isBotAdmin) keyboard.push([{ text: "طلبات مديري البوت" }]);
+/** The one text button we keep, so the menu is always one tap away. */
+export const MAIN_MENU_LABEL = "☰ القائمة الرئيسية";
+
+export function telegramMainKeyboard(): TelegramReplyMarkup {
   return {
-    keyboard,
+    keyboard: [[{ text: MAIN_MENU_LABEL }]],
     resize_keyboard: true,
     is_persistent: true,
   };
 }
 
-export function telegramCommandMenu(isBotAdmin = false): TelegramReplyMarkup {
+const MANAGEMENT_ROLES = new Set(["رئيس المقيمين", "الإدارة العليا", "مطور النظام"]);
+const PATIENT_ROLES = new Set(["طبيب مقيم", "رئيس المقيمين", "الحسابات", "الإدارة العليا", "مطور النظام"]);
+const HANDOVER_ROLES = new Set(["طبيب مقيم", "رئيس المقيمين", "مطور النظام"]);
+
+/** Verified bot admins are hospital operators, so they see every button. */
+function allows(isBotAdmin: boolean, role: string, roles: Set<string>) {
+  return isBotAdmin || roles.has(role);
+}
+
+export function telegramCommandMenu(isBotAdmin = false, role = ""): TelegramReplyMarkup {
   const inlineKeyboard = [
-    [{ text: "🟢 تسجيل حضور", callback_data: "menu:checkin" }, { text: "خروج", callback_data: "menu:checkout" }],
-    [{ text: "حالتي الآن", callback_data: "menu:status" }, { text: "الموجودون الآن", callback_data: "menu:present" }],
-    [{ text: "مهامي المفتوحة", callback_data: "menu:tasks" }, { text: "إضافة مهمة", callback_data: "menu:task" }],
-    [{ text: "متابعة مهمة", callback_data: "menu:followup" }, { text: "إنهاء مهمة", callback_data: "menu:done" }],
-    [{ text: "تسجيل مريض", callback_data: "menu:patient" }, { text: "تسليم مناوبة", callback_data: "menu:handover" }],
-    [{ text: "إرفاق صورة أو PDF", callback_data: "menu:attach" }, { text: "دليل الأوامر", callback_data: "menu:help" }],
+    [{ text: "🟢 تسجيل حضور", callback_data: "menu:checkin" }, { text: "🔴 تسجيل انصراف", callback_data: "menu:checkout" }],
+    [{ text: "👤 حالتي الآن", callback_data: "menu:status" }, { text: "📋 مهامي المفتوحة", callback_data: "menu:tasks" }],
+    [{ text: "▶️ بدء متابعة مهمة", callback_data: "menu:followup" }, { text: "✅ إنهاء مهمة", callback_data: "menu:done" }],
+    [{ text: "➕ إضافة مهمة", callback_data: "menu:task" }],
   ];
-  if (isBotAdmin) inlineKeyboard.push([{ text: "طلبات مديري البوت", callback_data: "menu:adminrequests" }]);
+  if (allows(isBotAdmin, role, MANAGEMENT_ROLES)) inlineKeyboard.push([{ text: "🏥 الموجودون الآن", callback_data: "menu:present" }]);
+  if (allows(isBotAdmin, role, PATIENT_ROLES)) inlineKeyboard.push([{ text: "🧾 تسجيل مريضة", callback_data: "menu:patient" }]);
+  if (allows(isBotAdmin, role, HANDOVER_ROLES)) inlineKeyboard.push([{ text: "🔄 تسليم مناوبة", callback_data: "menu:handover" }]);
+  inlineKeyboard.push([{ text: "📎 إرفاق صورة أو PDF", callback_data: "menu:attach" }]);
+  if (allows(isBotAdmin, role, MANAGEMENT_ROLES)) inlineKeyboard.push([{ text: "🔗 ربط موظف بالبوت", callback_data: "menu:linkstaff" }]);
+  if (isBotAdmin) inlineKeyboard.push([{ text: "🛡️ طلبات مديري البوت", callback_data: "menu:adminrequests" }]);
+  inlineKeyboard.push([{ text: "❓ شرح الاستخدام", callback_data: "menu:help" }]);
   return { inline_keyboard: inlineKeyboard };
 }
 

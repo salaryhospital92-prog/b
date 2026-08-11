@@ -1,6 +1,8 @@
 import { getBillingMode, getInitialPrice } from "../../../../lib/rules-engine";
 import { getSupabaseAdmin, readRuntimeVariable } from "../../../../lib/supabase-server";
+import { createLinkCode } from "../../../../lib/telegram-link";
 import {
+  MAIN_MENU_LABEL,
   answerTelegramCallback,
   downloadTelegramFile,
   sendTelegramMessage,
@@ -9,6 +11,16 @@ import {
   telegramMainKeyboard,
   type TelegramReplyMarkup,
 } from "../../../../lib/telegram";
+import {
+  applyFlowInput,
+  clearSession,
+  loadSession,
+  startFlow,
+  type Flow,
+  type FlowContext,
+  type FlowInput,
+  type FlowOption,
+} from "../../../../lib/telegram-flows";
 
 type Row = Record<string, unknown>;
 type TelegramUser = { id: number; username?: string; first_name?: string; last_name?: string };
@@ -28,11 +40,23 @@ type TelegramMessage = {
 type TelegramCallbackQuery = { id: string; from: TelegramUser; message?: TelegramMessage; data?: string };
 type TelegramUpdate = { update_id: number; message?: TelegramMessage; callback_query?: TelegramCallbackQuery };
 type LinkedEmployee = { accountId: number; employeeId: number; fullName: string; role: string; specialty: string; isBotAdmin: boolean };
-type CommandResult = { text: string; employeeId?: number; isBotAdmin?: boolean; replyMarkup?: TelegramReplyMarkup };
+type CommandResult = { text: string; employeeId?: number; isBotAdmin?: boolean; role?: string; replyMarkup?: TelegramReplyMarkup };
+type AttachedFile = { fileId: string; fileName: string; mimeType: string; declaredSize: number };
 
 const MANAGEMENT_ROLES = new Set(["رئيس المقيمين", "الإدارة العليا", "مطور النظام"]);
 const PATIENT_ROLES = new Set(["طبيب مقيم", "رئيس المقيمين", "الحسابات", "الإدارة العليا", "مطور النظام"]);
+const HANDOVER_ROLES = new Set(["طبيب مقيم", "رئيس المقيمين", "مطور النظام"]);
 const MAX_TELEGRAM_FILE = 15 * 1024 * 1024;
+const ALLOWED_ATTACHMENT_MIME = new Set(["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif", "application/pdf"]);
+const FLOW_COMMANDS = new Set(["task", "followup", "done", "patient", "handover", "attach", "linkstaff"]);
+
+/**
+ * Verified bot admins are the hospital's own operators, so they clear every
+ * role gate. Every permission check in this file goes through here.
+ */
+function allows(actor: { role: string; isBotAdmin: boolean }, roles: Set<string>) {
+  return actor.isBotAdmin || roles.has(actor.role);
+}
 
 function webhookSecretIsValid(request: Request) {
   const expected = readRuntimeVariable("TELEGRAM_WEBHOOK_SECRET") || "";
@@ -43,10 +67,11 @@ function webhookSecretIsValid(request: Request) {
   return difference === 0;
 }
 
-function baghdadDate() {
+function baghdadDate(offsetDays = 0) {
+  const moment = new Date(Date.now() + offsetDays * 86_400_000);
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Baghdad", year: "numeric", month: "2-digit", day: "2-digit",
-  }).format(new Date());
+  }).format(moment);
 }
 
 function formatTime(value: unknown) {
@@ -56,31 +81,9 @@ function formatTime(value: unknown) {
   }).format(new Date(String(value)));
 }
 
-function splitParts(value: string) {
-  return value.split("|").map((part) => part.trim()).filter(Boolean);
-}
-
 function parseCommand(rawText: string) {
   const text = rawText.trim();
-  const natural: Record<string, string> = {
-    "تسجيل حضور": "checkin",
-    "تسجيل انصراف": "checkout",
-    "مهامي": "tasks",
-    "حالتي": "status",
-    "من موجود الآن": "present",
-    "مساعدة": "help",
-    "قائمة الأوامر": "menu",
-    "إضافة مهمة": "task",
-    "متابعة مهمة": "followup",
-    "إنهاء مهمة": "done",
-    "إضافة مريض": "patient",
-    "تسجيل مريض": "patient",
-    "تسليم مناوبة": "handover",
-    "إرفاق ملف": "attach",
-    "طلبات مديري البوت": "adminrequests",
-    "إلغاء": "menu",
-  };
-  if (natural[text]) return { name: natural[text], args: "" };
+  if (text === MAIN_MENU_LABEL) return { name: "menu", args: "" };
   const [head = "", ...tail] = text.split(/\s+/);
   if (!head.startsWith("/")) return { name: "unknown", args: text };
   return { name: head.slice(1).split("@")[0].toLowerCase(), args: tail.join(" ").trim() };
@@ -88,23 +91,20 @@ function parseCommand(rawText: string) {
 
 function helpText() {
   return [
-    "بوت البياتي — الأوامر المتاحة",
+    "بوت البياتي — كل شيء بالأزرار",
     "",
-    "/menu — عرض قائمة الأزرار التفاعلية",
-    "/checkin ملاحظة — تسجيل الحضور",
-    "/checkout ملاحظة — تسجيل الانصراف",
-    "/status — حالتي وآخر نشاط",
-    "/present — الموظفون الموجودون الآن (للإدارة)",
-    "/tasks — مهامي المفتوحة",
-    "/task المهمة | اسم الموظف | 2026-08-12 | عاجلة — إنشاء مهمة",
-    "/followup 12 — بدء متابعة مهمة",
-    "/done 12 — إكمال مهمة",
-    "/patient الاسم | رقم الملف | الجنس | القسم | نوع الدخول | الطبيب — تسجيل مريض",
-    "/handover الطبيب المستلم | P-1001,P-1002 | ملاحظة — تسليم مرضى",
-    "/attach patient | P-1001 | تحاليل — أرسلها كتعليق على صورة أو PDF",
-    "/adminrequests — طلبات إدارة البوت (لمديري البوت فقط)",
+    "لا تحتاج لحفظ أي أمر. اضغط زر «☰ القائمة الرئيسية» أسفل الشاشة، ثم اختر ما تريد.",
     "",
-    "كل عملية تُحفظ في قاعدة البياتي نفسها مع اسم المنفذ والوقت والمصدر.",
+    "• تسجيل الحضور والانصراف — ضغطة واحدة.",
+    "• المهام — البوت يعرض لك مهامك كأزرار، تضغط على المهمة لبدء متابعتها أو إنهائها.",
+    "• إضافة مهمة — البوت يسألك خطوة بخطوة: العنوان، ثم الموظف، ثم الأولوية، ثم الموعد.",
+    "• تسجيل مريضة — يسألك عن الاسم، ثم يعرض الجنس والقسم ونوع الدخول والطبيب كأزرار.",
+    "• تسليم مناوبة — تختار الطبيب المستلم، ثم تحدد المرضى من قائمة أزرار.",
+    "• إرفاق ملف — تختار الوجهة والتصنيف بالأزرار، ثم ترسل الصورة أو الـPDF.",
+    "• ربط موظف — للإدارة ومديري البوت: تختار الموظف، والبوت يعطيك رابطًا جاهزًا ترسله له.",
+    "",
+    "أثناء أي عملية يظهر زر «✖️ إلغاء» للتراجع دون حفظ أي شيء.",
+    "كل عملية تُحفظ في قاعدة البياتي مع اسم المنفذ والوقت والمصدر.",
   ].join("\n");
 }
 
@@ -184,9 +184,11 @@ async function pairAccount(message: TelegramMessage, code: string): Promise<Comm
   };
   await recordActivity(linked, "ربط Telegram", "ربط حسابه ببوت البياتي", "telegram_account", String(link.employee_id));
   return {
-    text: `تم الربط بنجاح يا ${employee.full_name}.\nصلاحيتك: ${employee.role}\nيمكنك الآن تنفيذ مهامك من بوت البياتي.`,
+    text: `تم الربط بنجاح يا ${employee.full_name}.\nصلاحيتك: ${employee.role}\nاضغط على أي زر للبدء.`,
     employeeId: Number(link.employee_id),
     isBotAdmin: false,
+    role: String(employee.role),
+    replyMarkup: telegramCommandMenu(false, String(employee.role)),
   };
 }
 
@@ -212,7 +214,7 @@ async function registerUnlinkedStart(message: TelegramMessage): Promise<CommandR
     if (error) throw error;
     if (allowed && allowed.status !== "ملغى") {
       return {
-        text: "تم التعرف على حساب د. مصطفى. لإكمال صلاحية مدير البوت بأمان اضغط الزر وشارك رقمك المسجل. لا يُحفظ أي رقم جديد غير الرقم المعتمد في النظام.",
+        text: "تم التعرف على حسابك ضمن مديري البوت المعتمدين. لإكمال التفعيل بأمان اضغط الزر وشارك رقمك المسجل. لا يُحفظ أي رقم جديد غير الرقم المعتمد في النظام.",
         replyMarkup: telegramContactVerificationKeyboard(),
       };
     }
@@ -275,10 +277,11 @@ async function verifyBootstrapAdmin(message: TelegramMessage): Promise<CommandRe
   };
   await recordActivity(linked, "اعتماد مدير البوت", "تحقق من اسم Telegram ورقم الهاتف وأصبح مديرًا لبوت البياتي", "telegram_account", account.id);
   return {
-    text: `تم التحقق بنجاح يا ${linked.fullName}. أصبحت الآن مديرًا لبوت البياتي ويمكنك الموافقة على حساب Start المعلّق.`,
+    text: `تم التحقق بنجاح يا ${linked.fullName}. أصبحت الآن مديرًا لبوت البياتي. اختر ما تريد من الأزرار:`,
     employeeId: linked.employeeId,
     isBotAdmin: true,
-    replyMarkup: telegramCommandMenu(true),
+    role: linked.role,
+    replyMarkup: telegramCommandMenu(true, linked.role),
   };
 }
 
@@ -287,15 +290,16 @@ async function botAdminRequests(employee: LinkedEmployee): Promise<CommandResult
   const { data, error } = await getSupabaseAdmin().from("telegram_bot_admin_requests").select("id,username,display_name,requested_at")
     .eq("status", "بانتظار الموافقة").order("requested_at", { ascending: true }).limit(20);
   if (error) throw error;
-  if (!data?.length) return { text: "لا توجد طلبات إدارة بوت معلّقة الآن.", employeeId: employee.employeeId, isBotAdmin: true };
+  if (!data?.length) return { text: "لا توجد طلبات إدارة بوت معلّقة الآن.", employeeId: employee.employeeId, isBotAdmin: true, role: employee.role };
   const rows = data.flatMap((request) => [[
-    { text: `اعتماد ${request.username ? `@${request.username}` : request.display_name}`, callback_data: `adminapprove:${request.id}` },
-    { text: "رفض", callback_data: `adminreject:${request.id}` },
+    { text: `✅ اعتماد ${request.username ? `@${request.username}` : request.display_name}`, callback_data: `adminapprove:${request.id}` },
+    { text: "✖️ رفض", callback_data: `adminreject:${request.id}` },
   ]]);
   return {
     text: ["طلبات إدارة البوت المعلقة:", ...data.map((request) => `#${request.id} · ${request.display_name}${request.username ? ` · @${request.username}` : ""}`)].join("\n"),
     employeeId: employee.employeeId,
     isBotAdmin: true,
+    role: employee.role,
     replyMarkup: { inline_keyboard: rows },
   };
 }
@@ -347,17 +351,17 @@ async function reviewBotAdminRequest(employee: LinkedEmployee, requestIdText: st
     status: "مقبول", reviewed_by: employee.employeeId, reviewed_at: new Date().toISOString(),
   }).eq("id", requestId);
   if (approveError) throw approveError;
-  await sendTelegramMessage(Number(request.chat_id), "تمت الموافقة عليك كمدير لبوت البياتي. افتح قائمة الأوامر للبدء.", telegramMainKeyboard(true));
+  await sendTelegramMessage(Number(request.chat_id), "تمت الموافقة عليك كمدير لبوت البياتي. اضغط «☰ القائمة الرئيسية» للبدء.", telegramMainKeyboard());
   await recordActivity(employee, "اعتماد مدير بوت", `اعتمد ${approvedEmployee.full_name} مديرًا لبوت البياتي`, "telegram_admin_request", requestId);
   return `تم اعتماد ${approvedEmployee.full_name} مديرًا للبوت.`;
 }
 
-async function attendance(employee: LinkedEmployee, action: "دخول" | "خروج", note: string) {
+async function attendance(employee: LinkedEmployee, action: "دخول" | "خروج") {
   const { error } = await getSupabaseAdmin().rpc("record_attendance_event", {
     p_employee_name: employee.fullName,
     p_action: action,
     p_source: "telegram",
-    p_note: note || null,
+    p_note: null,
     p_recorded_by_name: employee.fullName,
   });
   if (error) {
@@ -369,7 +373,7 @@ async function attendance(employee: LinkedEmployee, action: "دخول" | "خرو
 }
 
 async function presenceList(employee: LinkedEmployee) {
-  if (!MANAGEMENT_ROLES.has(employee.role) && !employee.isBotAdmin) return "قائمة الموجودين الآن متاحة للإدارة العليا ورئيس المقيمين فقط.";
+  if (!allows(employee, MANAGEMENT_ROLES)) return "قائمة الموجودين الآن متاحة للإدارة العليا ورئيس المقيمين فقط.";
   const { data, error } = await getSupabaseAdmin().from("employee_presence_overview").select("full_name,role,clock_in_at,last_activity,last_activity_at")
     .eq("is_present", true).order("clock_in_at", { ascending: true });
   if (error) throw error;
@@ -383,7 +387,7 @@ async function presenceList(employee: LinkedEmployee) {
 async function personalStatus(employee: LinkedEmployee) {
   const supabase = getSupabaseAdmin();
   const [{ data: presence, error: presenceError }, { count, error: tasksError }] = await Promise.all([
-    supabase.from("employee_presence_overview").select("is_present,clock_in_at,last_activity,last_activity_at").eq("employee_id", employee.employeeId).single(),
+    supabase.from("employee_presence_overview").select("is_present,clock_in_at,last_activity,last_activity_at").eq("employee_id", employee.employeeId).maybeSingle(),
     supabase.from("operational_tasks").select("id", { count: "exact", head: true }).eq("assigned_employee_id", employee.employeeId).neq("status", "مكتملة").neq("status", "ملغاة"),
   ]);
   if (presenceError) throw presenceError;
@@ -406,56 +410,152 @@ async function taskList(employee: LinkedEmployee) {
   return ["مهامك المفتوحة:", ...data.map((task) => `#${task.id} · ${task.title}\n${task.status} · ${task.priority}${task.due_at ? ` · ${formatTime(task.due_at)}` : ""}`)].join("\n\n");
 }
 
-async function createTask(employee: LinkedEmployee, args: string) {
-  const [title, requestedAssignee, dueDate, requestedPriority] = splitParts(args);
-  if (!title) return "الصيغة: /task المهمة | اسم الموظف | 2026-08-12 | عاجلة";
+/* ------------------------------------------------------------------ */
+/* Option loaders — every guided step is filled from real data.        */
+/* ------------------------------------------------------------------ */
+
+async function assignableEmployeeOptions(context: FlowContext): Promise<FlowOption[]> {
+  const self: FlowOption = { label: `👤 ${context.fullName} (أنا)`, value: String(context.employeeId) };
+  if (!allows(context, MANAGEMENT_ROLES)) return [self];
+  const { data, error } = await getSupabaseAdmin().from("employees").select("id,full_name,role")
+    .eq("status", "نشط").order("full_name").limit(30);
+  if (error) throw error;
+  const others = (data || [])
+    .filter((employee) => Number(employee.id) !== context.employeeId)
+    .map((employee) => ({ label: `${employee.full_name} — ${employee.role}`, value: String(employee.id) }));
+  return [self, ...others];
+}
+
+async function openTaskOptions(context: FlowContext): Promise<FlowOption[]> {
+  let query = getSupabaseAdmin().from("operational_tasks").select("id,title,priority")
+    .neq("status", "مكتملة").neq("status", "ملغاة");
+  if (!allows(context, MANAGEMENT_ROLES)) query = query.eq("assigned_employee_id", context.employeeId);
+  const { data, error } = await query.order("id", { ascending: false }).limit(25);
+  if (error) throw error;
+  return (data || []).map((task) => ({ label: `#${task.id} · ${task.title}`.slice(0, 60), value: String(task.id) }));
+}
+
+async function residentDoctorOptions(context: FlowContext): Promise<FlowOption[]> {
+  const { data, error } = await getSupabaseAdmin().from("employees").select("id,full_name")
+    .eq("role", "طبيب مقيم").eq("status", "نشط").order("full_name").limit(30);
+  if (error) throw error;
+  return (data || [])
+    .filter((doctor) => Number(doctor.id) !== context.employeeId)
+    .map((doctor) => ({ label: String(doctor.full_name), value: String(doctor.full_name) }));
+}
+
+async function attendingDoctorOptions(context: FlowContext): Promise<FlowOption[]> {
+  const { data, error } = await getSupabaseAdmin().from("employees").select("id,full_name")
+    .eq("role", "طبيب مقيم").eq("status", "نشط").order("full_name").limit(30);
+  if (error) throw error;
+  const doctors = (data || []).map((doctor) => ({ label: String(doctor.full_name), value: String(doctor.full_name) }));
+  return [{ label: `👤 ${context.fullName} (أنا)`, value: context.fullName }, ...doctors.filter((doctor) => doctor.value !== context.fullName)];
+}
+
+async function activePatientOptions(): Promise<FlowOption[]> {
+  const { data, error } = await getSupabaseAdmin().from("patients").select("file_number,full_name,department")
+    .neq("patient_status", "خرجت").eq("is_newborn", false).order("id", { ascending: false }).limit(30);
+  if (error) throw error;
+  return (data || []).map((patient) => ({ label: `${patient.full_name} · ${patient.file_number}`.slice(0, 60), value: String(patient.file_number) }));
+}
+
+async function unlinkedEmployeeOptions(): Promise<FlowOption[]> {
   const supabase = getSupabaseAdmin();
-  let assignee = { id: employee.employeeId, full_name: employee.fullName };
-  if (requestedAssignee && MANAGEMENT_ROLES.has(employee.role)) {
-    const { data, error } = await supabase.from("employees").select("id,full_name").ilike("full_name", `%${requestedAssignee}%`).eq("status", "نشط").limit(1).maybeSingle();
-    if (error) throw error;
-    if (!data) return "لم أجد موظفًا نشطًا بالاسم المطلوب.";
-    assignee = { id: Number(data.id), full_name: String(data.full_name) };
-  }
-  const priority = ["اعتيادية", "مهمة", "عاجلة"].includes(requestedPriority) ? requestedPriority : "اعتيادية";
-  const dueAt = /^\d{4}-\d{2}-\d{2}$/.test(dueDate || "") ? `${dueDate}T12:00:00+03:00` : null;
+  const [{ data: employees, error }, { data: accounts, error: accountsError }] = await Promise.all([
+    supabase.from("employees").select("id,full_name,role").eq("status", "نشط").order("full_name").limit(50),
+    supabase.from("telegram_accounts").select("employee_id").eq("status", "معتمد"),
+  ]);
+  if (error) throw error;
+  if (accountsError) throw accountsError;
+  const linked = new Set((accounts || []).map((account) => Number(account.employee_id)));
+  return (employees || [])
+    .filter((employee) => !linked.has(Number(employee.id)))
+    .map((employee) => ({ label: `${employee.full_name} — ${employee.role}`, value: String(employee.id) }));
+}
+
+function staticOptions(values: string[]): () => Promise<FlowOption[]> {
+  return async () => values.map((value) => ({ label: value, value }));
+}
+
+async function dueDateOptions(): Promise<FlowOption[]> {
+  return [
+    { label: "اليوم", value: baghdadDate(0) },
+    { label: "غدًا", value: baghdadDate(1) },
+    { label: "بعد 3 أيام", value: baghdadDate(3) },
+    { label: "بعد أسبوع", value: baghdadDate(7) },
+    { label: "بدون موعد", value: "" },
+  ];
+}
+
+/* ------------------------------------------------------------------ */
+/* Actions — called once a guided flow has collected everything.       */
+/* ------------------------------------------------------------------ */
+
+async function nextFileNumber() {
+  // ponytail: scans the newest 500 file numbers; add a DB sequence if the archive outgrows that.
+  const { data, error } = await getSupabaseAdmin().from("patients").select("file_number")
+    .like("file_number", "P-%").order("id", { ascending: false }).limit(500);
+  if (error) throw error;
+  const highest = (data || []).reduce((maximum, row) => {
+    const parsed = Number(String(row.file_number).slice(2));
+    return Number.isFinite(parsed) && parsed > maximum ? parsed : maximum;
+  }, 0);
+  return `P-${String(highest + 1).padStart(4, "0")}`;
+}
+
+async function finishTask(employee: LinkedEmployee, context: FlowContext) {
+  const title = String(context.data.title || "").trim();
+  const assigneeId = Number(context.data.assigneeId);
+  const priority = String(context.data.priority || "اعتيادية");
+  const dueDate = String(context.data.dueAt || "");
+  if (!title || !Number.isInteger(assigneeId)) return "تعذر إنشاء المهمة: بيانات ناقصة. ابدأ من جديد.";
+  const supabase = getSupabaseAdmin();
+  const { data: assignee, error: assigneeError } = await supabase.from("employees").select("id,full_name")
+    .eq("id", assigneeId).eq("status", "نشط").maybeSingle();
+  if (assigneeError) throw assigneeError;
+  if (!assignee) return "الموظف المحدد لم يعد نشطًا. ابدأ من جديد.";
   const { data: task, error } = await supabase.from("operational_tasks").insert({
     title,
-    assigned_employee_id: assignee.id,
+    assigned_employee_id: Number(assignee.id),
     status: "مفتوحة",
     priority,
-    due_at: dueAt,
+    due_at: dueDate ? `${dueDate}T12:00:00+03:00` : null,
     created_by: employee.employeeId,
     source: "telegram",
   }).select("id").single();
   if (error) throw error;
   await recordActivity(employee, "إنشاء مهمة", `أنشأ مهمة «${title}» وأسندها إلى ${assignee.full_name}`, "task", task.id, { assigneeId: assignee.id });
-  return `تم إنشاء المهمة #${task.id} وإسنادها إلى ${assignee.full_name}.`;
+  return `✅ تم إنشاء المهمة #${task.id}\nالعنوان: ${title}\nالمسؤول: ${assignee.full_name}\nالأولوية: ${priority}\nالموعد: ${dueDate || "بدون موعد"}`;
 }
 
-async function updateTask(employee: LinkedEmployee, args: string, status: "قيد المتابعة" | "مكتملة") {
-  const taskId = Number(args.trim());
-  if (!Number.isInteger(taskId) || taskId <= 0) return status === "مكتملة" ? "الصيغة: /done 12" : "الصيغة: /followup 12";
+async function finishTaskStatus(employee: LinkedEmployee, context: FlowContext, status: "قيد المتابعة" | "مكتملة") {
+  const taskId = Number(context.data.taskId);
+  if (!Number.isInteger(taskId) || taskId <= 0) return "لم يتم تحديد المهمة. ابدأ من جديد.";
   const supabase = getSupabaseAdmin();
-  const { data: task, error } = await supabase.from("operational_tasks").select("id,title,assigned_employee_id,status").eq("id", taskId).maybeSingle();
+  const { data: task, error } = await supabase.from("operational_tasks").select("id,title,assigned_employee_id").eq("id", taskId).maybeSingle();
   if (error) throw error;
   if (!task) return "المهمة غير موجودة.";
-  if (Number(task.assigned_employee_id) !== employee.employeeId && !MANAGEMENT_ROLES.has(employee.role)) return "لا يمكنك تعديل مهمة مسندة إلى موظف آخر.";
+  if (Number(task.assigned_employee_id) !== employee.employeeId && !allows(employee, MANAGEMENT_ROLES)) return "لا يمكنك تعديل مهمة مسندة إلى موظف آخر.";
   const update = status === "مكتملة"
     ? { status, completed_at: new Date().toISOString(), completed_by: employee.employeeId }
     : { status, completed_at: null, completed_by: null };
   const { error: updateError } = await supabase.from("operational_tasks").update(update).eq("id", taskId);
   if (updateError) throw updateError;
   await recordActivity(employee, status === "مكتملة" ? "إكمال مهمة" : "متابعة مهمة", `${status === "مكتملة" ? "أكمل" : "بدأ متابعة"} المهمة «${task.title}»`, "task", taskId);
-  return status === "مكتملة" ? `تم إكمال المهمة #${taskId}.` : `أصبحت المهمة #${taskId} قيد المتابعة.`;
+  return status === "مكتملة" ? `✅ تم إنهاء المهمة #${taskId} — ${task.title}` : `▶️ المهمة #${taskId} أصبحت قيد المتابعة — ${task.title}`;
 }
 
-async function registerPatient(employee: LinkedEmployee, args: string) {
-  if (!PATIENT_ROLES.has(employee.role)) return "صلاحيتك لا تسمح بتسجيل المرضى.";
-  const [fullName, fileNumber, gender, department, entryType, attendingDoctor] = splitParts(args);
-  if (!fullName || !fileNumber || !gender || !department || !entryType) {
-    return "الصيغة: /patient الاسم | رقم الملف | الجنس | القسم | نوع الدخول | الطبيب\nمثال: /patient زينب علي | P-1088 | أنثى | النسائية والتوليد | استشارية | د. أحمد البياتي";
-  }
+async function finishPatient(employee: LinkedEmployee, context: FlowContext) {
+  if (!allows(employee, PATIENT_ROLES)) return "صلاحيتك لا تسمح بتسجيل المرضى.";
+  const fullName = String(context.data.fullName || "").trim();
+  const requestedFile = String(context.data.fileNumber || "auto").trim();
+  const gender = String(context.data.gender || "");
+  const department = String(context.data.department || "");
+  const entryType = String(context.data.entryType || "");
+  const attendingDoctor = String(context.data.attendingDoctor || employee.fullName);
+  if (!fullName || !gender || !department || !entryType) return "تعذر التسجيل: بيانات ناقصة. ابدأ من جديد.";
+  const fileNumber = requestedFile === "auto" ? await nextFileNumber() : requestedFile;
+
   const { data, error } = await getSupabaseAdmin().rpc("register_patient", {
     p_full_name: fullName,
     p_file_number: fileNumber,
@@ -464,7 +564,7 @@ async function registerPatient(employee: LinkedEmployee, args: string) {
     p_phone: "",
     p_admission_date: baghdadDate(),
     p_department: department,
-    p_attending_doctor: attendingDoctor || employee.fullName,
+    p_attending_doctor: attendingDoctor,
     p_payment_category: "نقدي",
     p_entry_type: entryType,
     p_billing_mode: getBillingMode(entryType),
@@ -473,42 +573,292 @@ async function registerPatient(employee: LinkedEmployee, args: string) {
     p_newborn_names: [],
   });
   if (error) {
-    if (error.code === "23505" || error.message.includes("duplicate key")) return "رقم الملف مسجل مسبقًا.";
+    if (error.code === "23505" || error.message.includes("duplicate key")) return `رقم الملف ${fileNumber} مسجل مسبقًا. ابدأ من جديد واختر «توليد رقم تلقائي».`;
     throw error;
   }
   const result = data as { record?: Row };
   await recordActivity(employee, "تسجيل مريض", `أنشأ ملف المريض ${fullName} عبر البوت`, "patient", String(result.record?.id || ""), { fileNumber, entryType });
-  return `تم تسجيل المريض ${fullName} برقم الملف ${fileNumber}.`;
+  return `✅ تم تسجيل ${fullName}\nرقم الملف: ${fileNumber}\nالقسم: ${department}\nنوع الدخول: ${entryType}\nالطبيب: ${attendingDoctor}`;
 }
 
-async function createHandover(employee: LinkedEmployee, args: string) {
-  if (!["طبيب مقيم", "رئيس المقيمين", "مطور النظام"].includes(employee.role)) return "صلاحيتك لا تسمح بتسليم المناوبات.";
-  const [toDoctorName, filesText, notes] = splitParts(args);
-  const fileNumbers = (filesText || "").split(",").map((item) => item.trim()).filter(Boolean);
-  if (!toDoctorName || !fileNumbers.length) return "الصيغة: /handover الطبيب المستلم | P-1001,P-1002 | ملاحظة";
+async function finishHandover(employee: LinkedEmployee, context: FlowContext) {
+  if (!allows(employee, HANDOVER_ROLES)) return "صلاحيتك لا تسمح بتسليم المناوبات.";
+  const toDoctorName = String(context.data.toDoctor || "");
+  const fileNumbers = Array.isArray(context.data.patients) ? (context.data.patients as string[]) : [];
+  const notes = String(context.data.notes || "");
+  if (!toDoctorName || !fileNumbers.length) return "تعذر التسليم: لم تُحدد الطبيب المستلم أو المرضى.";
   const supabase = getSupabaseAdmin();
-  const { data: doctor, error: doctorError } = await supabase.from("employees").select("full_name")
-    .ilike("full_name", `%${toDoctorName}%`).eq("role", "طبيب مقيم").eq("status", "نشط").limit(1).maybeSingle();
-  if (doctorError) throw doctorError;
-  if (!doctor) return "لم أجد الطبيب المستلم ضمن حسابات الأطباء النشطة.";
   const { data: patients, error: patientsError } = await supabase.from("patients").select("id,file_number")
     .in("file_number", fileNumbers).neq("patient_status", "خرجت");
   if (patientsError) throw patientsError;
-  if (!patients?.length) return "لم أجد ملفات مرضى نشطة بالأرقام المرسلة.";
+  if (!patients?.length) return "لم أجد ملفات مرضى نشطة ضمن اختيارك.";
   const { data: handover, error } = await supabase.rpc("create_shift_handover", {
     p_from_doctor_name: employee.fullName,
-    p_to_doctor_name: doctor.full_name,
+    p_to_doctor_name: toDoctorName,
     p_patient_ids: patients.map((patient) => Number(patient.id)),
     p_notes: notes || null,
   });
   if (error) throw error;
   const record = handover as Row;
-  await recordActivity(employee, "تسليم مناوبة", `سلّم ${patients.length} مريضًا إلى ${doctor.full_name} عبر البوت`, "doctor_shift_handover", String(record.id || ""), { fileNumbers });
-  const missing = fileNumbers.filter((file) => !patients.some((patient) => patient.file_number === file));
-  return `تم إنشاء التسليم إلى ${doctor.full_name} لعدد ${patients.length} مريضًا.${missing.length ? `\nلم تُضمّن الملفات غير النشطة/غير الموجودة: ${missing.join(", ")}` : ""}`;
+  await recordActivity(employee, "تسليم مناوبة", `سلّم ${patients.length} مريضًا إلى ${toDoctorName} عبر البوت`, "doctor_shift_handover", String(record.id || ""), { fileNumbers });
+  return `✅ تم التسليم إلى ${toDoctorName}\nعدد المرضى: ${patients.length}${notes ? `\nملاحظة: ${notes}` : ""}`;
 }
 
-function attachmentInput(message: TelegramMessage) {
+async function finishAttachment(employee: LinkedEmployee, context: FlowContext) {
+  const entityType = String(context.data.entityType || "");
+  const entityRef = String(context.data.entityRef || "");
+  const category = String(context.data.category || "");
+  const file = context.data.file as AttachedFile | undefined;
+  if (!entityType || !entityRef || !category || !file?.fileId) return "تعذر الحفظ: بيانات ناقصة. ابدأ من جديد.";
+  if (!ALLOWED_ATTACHMENT_MIME.has(file.mimeType)) return "الملفات المدعومة هي الصور وPDF فقط.";
+  if (file.declaredSize > MAX_TELEGRAM_FILE) return "حجم الملف يتجاوز 15MB.";
+
+  const supabase = getSupabaseAdmin();
+  let entityId = "";
+  let bucketName = "patient-files";
+  if (entityType === "patient") {
+    const { data, error } = await supabase.from("patients").select("id").eq("file_number", entityRef).maybeSingle();
+    if (error) throw error;
+    if (!data) return "ملف المريضة لم يعد موجودًا.";
+    entityId = String(data.id);
+  } else if (entityType === "employee") {
+    if (!allows(employee, MANAGEMENT_ROLES) && entityRef !== String(employee.employeeId)) return "يمكنك إرفاق مستنداتك فقط؛ الإدارة تستطيع إرفاق مستندات الآخرين.";
+    const { data, error } = await supabase.from("employees").select("id").eq("id", Number(entityRef)).maybeSingle();
+    if (error) throw error;
+    if (!data) return "الموظف غير موجود.";
+    entityId = String(data.id);
+    bucketName = "employee-files";
+  } else {
+    const { data, error } = await supabase.from("operational_tasks").select("id,assigned_employee_id").eq("id", Number(entityRef)).maybeSingle();
+    if (error) throw error;
+    if (!data) return "المهمة غير موجودة.";
+    if (Number(data.assigned_employee_id) !== employee.employeeId && !allows(employee, MANAGEMENT_ROLES)) return "لا يمكنك إرفاق ملف بمهمة موظف آخر.";
+    entityId = String(data.id);
+  }
+
+  const downloaded = await downloadTelegramFile(file.fileId);
+  if (downloaded.bytes.byteLength > MAX_TELEGRAM_FILE) return "حجم الملف يتجاوز 15MB.";
+  const extension = file.fileName.split(".").pop()?.toLowerCase().replace(/[^a-z0-9]/g, "") || (file.mimeType === "application/pdf" ? "pdf" : "jpg");
+  const objectPath = `${entityType}/${entityId}/${baghdadDate().slice(0, 7)}/${crypto.randomUUID()}.${extension}`;
+  const { error: uploadError } = await supabase.storage.from(bucketName).upload(objectPath, downloaded.bytes, { contentType: file.mimeType, upsert: false });
+  if (uploadError) throw uploadError;
+  const { data: attachment, error: metadataError } = await supabase.from("file_attachments").insert({
+    bucket_name: bucketName,
+    object_path: objectPath,
+    entity_type: entityType,
+    entity_id: entityId,
+    category,
+    original_filename: file.fileName,
+    mime_type: file.mimeType,
+    size_bytes: downloaded.bytes.byteLength,
+    uploaded_by: employee.employeeId,
+    uploaded_by_name: employee.fullName,
+    metadata: { uploadSource: "telegram", telegramFileId: file.fileId },
+  }).select("id").single();
+  if (metadataError) {
+    await supabase.storage.from(bucketName).remove([objectPath]);
+    throw metadataError;
+  }
+  await recordActivity(employee, "إرفاق ملف", `أرفق ${category} عبر البوت`, entityType, entityId, { attachmentId: attachment.id });
+  return `✅ تم حفظ الملف ضمن «${category}» وربطه بالسجل.`;
+}
+
+async function finishLinkStaff(employee: LinkedEmployee, context: FlowContext) {
+  if (!allows(employee, MANAGEMENT_ROLES)) return "ربط الموظفين متاح للإدارة ومديري البوت فقط.";
+  const targetId = Number(context.data.employeeId);
+  if (!Number.isInteger(targetId) || targetId <= 0) return "لم يتم تحديد الموظف. ابدأ من جديد.";
+  const { data: target, error } = await getSupabaseAdmin().from("employees").select("id,full_name,role")
+    .eq("id", targetId).eq("status", "نشط").maybeSingle();
+  if (error) throw error;
+  if (!target) return "الموظف لم يعد نشطًا.";
+  const link = await createLinkCode(targetId, employee.employeeId);
+  await recordActivity(employee, "إنشاء رمز ربط", `أنشأ رمز ربط لحساب ${target.full_name}`, "telegram_account", targetId);
+  return [
+    `🔗 رمز ربط ${target.full_name} — ${target.role}`,
+    "",
+    `الرمز: ${link.code}`,
+    `الرابط المباشر: ${link.deepLink}`,
+    "",
+    `أرسل الرابط للموظف. بمجرد فتحه يُربط حسابه تلقائيًا بصلاحيته في النظام.`,
+    `صالح لمدة ${link.ttlMinutes} دقيقة ولمرة واحدة فقط.`,
+  ].join("\n");
+}
+
+/* ------------------------------------------------------------------ */
+/* Guided flows — every step is a button unless free text is unavoidable. */
+/* ------------------------------------------------------------------ */
+
+async function attachEntityOptions(context: FlowContext): Promise<FlowOption[]> {
+  const entityType = String(context.data.entityType || "");
+  if (entityType === "patient") return activePatientOptions();
+  if (entityType === "task") return openTaskOptions(context);
+  const self: FlowOption = { label: `👤 ${context.fullName} (أنا)`, value: String(context.employeeId) };
+  if (!allows(context, MANAGEMENT_ROLES)) return [self];
+  const { data, error } = await getSupabaseAdmin().from("employees").select("id,full_name").eq("status", "نشط").order("full_name").limit(30);
+  if (error) throw error;
+  const others = (data || [])
+    .filter((employee) => Number(employee.id) !== context.employeeId)
+    .map((employee) => ({ label: String(employee.full_name), value: String(employee.id) }));
+  return [self, ...others];
+}
+
+function buildFlows(employee: LinkedEmployee): Record<string, Flow> {
+  return {
+    task: {
+      title: "➕ إضافة مهمة",
+      steps: [
+        { key: "title", prompt: "ما هو عنوان المهمة؟", kind: "text" },
+        { key: "assigneeId", prompt: "من المسؤول عن تنفيذها؟", kind: "choice", options: assignableEmployeeOptions },
+        { key: "priority", prompt: "ما هي أولوية المهمة؟", kind: "choice", options: staticOptions(["اعتيادية", "مهمة", "عاجلة"]) },
+        { key: "dueAt", prompt: "متى موعد التسليم؟", kind: "choice", options: dueDateOptions },
+      ],
+      finish: (context) => finishTask(employee, context),
+    },
+    followup: {
+      title: "▶️ بدء متابعة مهمة",
+      steps: [{ key: "taskId", prompt: "اختر المهمة التي تريد بدء متابعتها:", kind: "choice", options: openTaskOptions }],
+      finish: (context) => finishTaskStatus(employee, context, "قيد المتابعة"),
+    },
+    done: {
+      title: "✅ إنهاء مهمة",
+      steps: [{ key: "taskId", prompt: "اختر المهمة التي أنجزتها:", kind: "choice", options: openTaskOptions }],
+      finish: (context) => finishTaskStatus(employee, context, "مكتملة"),
+    },
+    patient: {
+      title: "🧾 تسجيل مريضة",
+      steps: [
+        { key: "fullName", prompt: "ما هو اسم المريضة الكامل؟", kind: "text" },
+        {
+          key: "fileNumber",
+          prompt: "رقم الملف؟",
+          kind: "choice",
+          allowText: true,
+          options: async () => [{ label: "🔢 توليد رقم تلقائي", value: "auto" }],
+        },
+        { key: "gender", prompt: "الجنس؟", kind: "choice", options: staticOptions(["أنثى", "ذكر"]) },
+        {
+          key: "department",
+          prompt: "القسم الطبي؟",
+          kind: "choice",
+          options: staticOptions(["النسائية والتوليد", "الجراحة العامة", "الطب الباطني", "طب الأطفال", "الطوارئ", "العناية المركزة"]),
+        },
+        { key: "entryType", prompt: "نوع الدخول؟", kind: "choice", options: staticOptions(["استشارية", "ولادة طبيعية", "عملية قيصرية", "رقود"]) },
+        { key: "attendingDoctor", prompt: "الطبيب المسؤول؟", kind: "choice", options: attendingDoctorOptions },
+      ],
+      finish: (context) => finishPatient(employee, context),
+    },
+    handover: {
+      title: "🔄 تسليم مناوبة",
+      steps: [
+        { key: "toDoctor", prompt: "من هو الطبيب المستلم؟", kind: "choice", options: residentDoctorOptions },
+        { key: "patients", prompt: "حدّد المرضى المسلَّمين:", kind: "multi", options: activePatientOptions },
+        { key: "notes", prompt: "أي ملاحظة للطبيب المستلم؟", kind: "text", optional: true },
+      ],
+      finish: (context) => finishHandover(employee, context),
+    },
+    attach: {
+      title: "📎 إرفاق ملف",
+      steps: [
+        {
+          key: "entityType",
+          prompt: "بماذا تريد ربط الملف؟",
+          kind: "choice",
+          options: async () => [
+            { label: "🧾 مريضة", value: "patient" },
+            { label: "👤 موظف", value: "employee" },
+            { label: "📋 مهمة", value: "task" },
+          ],
+        },
+        { key: "entityRef", prompt: "اختر السجل:", kind: "choice", options: attachEntityOptions },
+        {
+          key: "category",
+          prompt: "ما تصنيف الملف؟",
+          kind: "choice",
+          options: staticOptions(["تحاليل", "أشعة", "تقرير طبي", "وصفة علاجية", "وثيقة إدارية", "أخرى"]),
+        },
+        { key: "file", prompt: "أرسل الآن الصورة أو ملف الـPDF.", kind: "file" },
+      ],
+      finish: (context) => finishAttachment(employee, context),
+    },
+    linkstaff: {
+      title: "🔗 ربط موظف بالبوت",
+      steps: [{ key: "employeeId", prompt: "اختر الموظف الذي تريد ربط حسابه بالبوت:", kind: "choice", options: unlinkedEmployeeOptions }],
+      finish: (context) => finishLinkStaff(employee, context),
+    },
+  };
+}
+
+function flowContext(employee: LinkedEmployee): FlowContext {
+  return {
+    employeeId: employee.employeeId,
+    fullName: employee.fullName,
+    role: employee.role,
+    isBotAdmin: employee.isBotAdmin,
+    data: {},
+  };
+}
+
+function menuResult(employee: LinkedEmployee, text: string): CommandResult {
+  return {
+    text,
+    employeeId: employee.employeeId,
+    isBotAdmin: employee.isBotAdmin,
+    role: employee.role,
+    replyMarkup: telegramCommandMenu(employee.isBotAdmin, employee.role),
+  };
+}
+
+async function executeCommand(employee: LinkedEmployee, chatId: number, telegramUserId: number, commandName: string): Promise<CommandResult> {
+  if (FLOW_COMMANDS.has(commandName)) {
+    if (commandName === "patient" && !allows(employee, PATIENT_ROLES)) return menuResult(employee, "صلاحيتك لا تسمح بتسجيل المرضى.");
+    if (commandName === "handover" && !allows(employee, HANDOVER_ROLES)) return menuResult(employee, "صلاحيتك لا تسمح بتسليم المناوبات.");
+    if (commandName === "linkstaff" && !allows(employee, MANAGEMENT_ROLES)) return menuResult(employee, "ربط الموظفين متاح للإدارة ومديري البوت فقط.");
+    const flow = buildFlows(employee)[commandName];
+    const context = flowContext(employee);
+    const firstStep = flow.steps[0];
+    if (firstStep.options) {
+      const available = await firstStep.options(context);
+      if (!available.length) return menuResult(employee, `لا توجد عناصر متاحة لبدء «${flow.title}» الآن.`);
+    }
+    const reply = await startFlow(chatId, telegramUserId, commandName, flow, context);
+    return { text: reply.text, employeeId: employee.employeeId, isBotAdmin: employee.isBotAdmin, role: employee.role, replyMarkup: reply.replyMarkup };
+  }
+
+  if (commandName === "adminrequests") return botAdminRequests(employee);
+  let text: string;
+  if (commandName === "checkin") text = await attendance(employee, "دخول");
+  else if (commandName === "checkout") text = await attendance(employee, "خروج");
+  else if (commandName === "present") text = await presenceList(employee);
+  else if (commandName === "status") text = await personalStatus(employee);
+  else if (commandName === "tasks") text = await taskList(employee);
+  else if (commandName === "help") text = helpText();
+  else if (commandName === "menu") text = "اختر العملية المطلوبة:";
+  else text = "اختر العملية المطلوبة من الأزرار:";
+  return menuResult(employee, text);
+}
+
+/** Feeds one answer into the running flow. Returns null when no flow is waiting for it. */
+async function routeFlowInput(employee: LinkedEmployee, chatId: number, telegramUserId: number, input: FlowInput): Promise<CommandResult | null> {
+  const session = await loadSession(chatId);
+  if (!session) return null;
+  const flow = buildFlows(employee)[session.flow];
+  if (!flow) {
+    await clearSession(chatId);
+    return null;
+  }
+  const context = flowContext(employee);
+  const reply = await applyFlowInput(chatId, telegramUserId, flow, session, context, input);
+  if (!reply) return null;
+  return {
+    text: reply.text,
+    employeeId: employee.employeeId,
+    isBotAdmin: employee.isBotAdmin,
+    role: employee.role,
+    replyMarkup: reply.finished ? telegramCommandMenu(employee.isBotAdmin, employee.role) : reply.replyMarkup,
+  };
+}
+
+function attachmentInput(message: TelegramMessage): AttachedFile | null {
   if (message.document) return {
     fileId: message.document.file_id,
     fileName: message.document.file_name || "telegram-file",
@@ -520,128 +870,61 @@ function attachmentInput(message: TelegramMessage) {
   return null;
 }
 
-async function attachFile(employee: LinkedEmployee, message: TelegramMessage, args: string) {
-  const input = attachmentInput(message);
-  if (!input) return "أرسل صورة أو ملف PDF واكتب في التعليق: /attach patient | P-1001 | تحاليل";
-  if (input.declaredSize > MAX_TELEGRAM_FILE) return "حجم الملف يتجاوز 15MB.";
-  const [requestedType, requestedEntity, category] = splitParts(args);
-  const entityType = requestedType?.toLowerCase();
-  if (!entityType || !requestedEntity || !category || !["patient", "employee", "task"].includes(entityType)) {
-    return "الصيغة: /attach patient | P-1001 | تحاليل\nالأنواع المدعومة: patient أو employee أو task";
-  }
-
-  const supabase = getSupabaseAdmin();
-  let entityId = "";
-  let bucketName = "patient-files";
-  if (entityType === "patient") {
-    const { data, error } = await supabase.from("patients").select("id").eq("file_number", requestedEntity).maybeSingle();
-    if (error) throw error;
-    if (!data) return "رقم ملف المريض غير موجود.";
-    entityId = String(data.id);
-  } else if (entityType === "employee") {
-    if (!MANAGEMENT_ROLES.has(employee.role) && requestedEntity !== String(employee.employeeId)) return "يمكنك إرفاق مستنداتك فقط؛ الإدارة تستطيع إرفاق مستندات الآخرين.";
-    const query = /^\d+$/.test(requestedEntity)
-      ? supabase.from("employees").select("id").eq("id", Number(requestedEntity)).maybeSingle()
-      : supabase.from("employees").select("id").ilike("full_name", `%${requestedEntity}%`).limit(1).maybeSingle();
-    const { data, error } = await query;
-    if (error) throw error;
-    if (!data) return "الموظف غير موجود.";
-    entityId = String(data.id);
-    bucketName = "employee-files";
-  } else {
-    const taskId = Number(requestedEntity);
-    const { data, error } = await supabase.from("operational_tasks").select("id,assigned_employee_id").eq("id", taskId).maybeSingle();
-    if (error) throw error;
-    if (!data) return "المهمة غير موجودة.";
-    if (Number(data.assigned_employee_id) !== employee.employeeId && !MANAGEMENT_ROLES.has(employee.role)) return "لا يمكنك إرفاق ملف بمهمة موظف آخر.";
-    entityId = String(data.id);
-  }
-
-  const allowedMime = new Set(["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif", "application/pdf"]);
-  if (!allowedMime.has(input.mimeType)) return "الملفات المدعومة هي الصور وPDF فقط.";
-  const downloaded = await downloadTelegramFile(input.fileId);
-  if (downloaded.bytes.byteLength > MAX_TELEGRAM_FILE) return "حجم الملف يتجاوز 15MB.";
-  const extension = input.fileName.split(".").pop()?.toLowerCase().replace(/[^a-z0-9]/g, "") || (input.mimeType === "application/pdf" ? "pdf" : "jpg");
-  const objectPath = `${entityType}/${entityId}/${baghdadDate().slice(0, 7)}/${crypto.randomUUID()}.${extension}`;
-  const { error: uploadError } = await supabase.storage.from(bucketName).upload(objectPath, downloaded.bytes, { contentType: input.mimeType, upsert: false });
-  if (uploadError) throw uploadError;
-  const { data: attachment, error: metadataError } = await supabase.from("file_attachments").insert({
-    bucket_name: bucketName,
-    object_path: objectPath,
-    entity_type: entityType,
-    entity_id: entityId,
-    category,
-    original_filename: input.fileName,
-    mime_type: input.mimeType,
-    size_bytes: downloaded.bytes.byteLength,
-    uploaded_by: employee.employeeId,
-    uploaded_by_name: employee.fullName,
-    metadata: { uploadSource: "telegram", telegramFileId: input.fileId },
-  }).select("id").single();
-  if (metadataError) {
-    await supabase.storage.from(bucketName).remove([objectPath]);
-    throw metadataError;
-  }
-  await recordActivity(employee, "إرفاق ملف", `أرفق ${category} عبر البوت`, entityType, entityId, { attachmentId: attachment.id });
-  return `تم حفظ الملف ضمن ${category} وربطه بالسجل بنجاح.`;
-}
-
-async function executeCommand(employee: LinkedEmployee, message: TelegramMessage, command: { name: string; args: string }): Promise<CommandResult> {
-  if (command.name === "menu") return {
-    text: "اختر العملية المطلوبة من الأزرار:",
-    employeeId: employee.employeeId,
-    isBotAdmin: employee.isBotAdmin,
-    replyMarkup: telegramCommandMenu(employee.isBotAdmin),
-  };
-  if (command.name === "adminrequests") return botAdminRequests(employee);
-  let text: string;
-  if (command.name === "checkin") text = await attendance(employee, "دخول", command.args);
-  else if (command.name === "checkout") text = await attendance(employee, "خروج", command.args);
-  else if (command.name === "present") text = await presenceList(employee);
-  else if (command.name === "status") text = await personalStatus(employee);
-  else if (command.name === "tasks") text = await taskList(employee);
-  else if (command.name === "task") text = await createTask(employee, command.args);
-  else if (command.name === "followup") text = await updateTask(employee, command.args, "قيد المتابعة");
-  else if (command.name === "done") text = await updateTask(employee, command.args, "مكتملة");
-  else if (command.name === "patient") text = await registerPatient(employee, command.args);
-  else if (command.name === "handover") text = await createHandover(employee, command.args);
-  else if (command.name === "attach") text = await attachFile(employee, message, command.args);
-  else if (command.name === "adminapprove") text = await reviewBotAdminRequest(employee, command.args, "مقبول");
-  else if (command.name === "adminreject") text = await reviewBotAdminRequest(employee, command.args, "مرفوض");
-  else if (command.name === "help") text = helpText();
-  else text = `لم أفهم الأمر.\n\n${helpText()}`;
-  return { text, employeeId: employee.employeeId, isBotAdmin: employee.isBotAdmin };
-}
-
 async function processMessage(message: TelegramMessage): Promise<CommandResult> {
   if (message.contact) return verifyBootstrapAdmin(message);
+  if (!message.from) return { text: "تعذر تحديد حساب Telegram المرسل." };
   const rawText = message.text || message.caption || "";
   const command = parseCommand(rawText);
+
   if (["start", "link"].includes(command.name) && command.args) return pairAccount(message, command.args);
-  if (!message.from) return { text: "تعذر تحديد حساب Telegram المرسل." };
   const employee = await linkedEmployee(message.chat.id, message.from.id);
-  if (["start", "link"].includes(command.name) && !command.args) {
-    if (employee) return {
-      text: `مرحبًا ${employee.fullName}. أنت مرتبط بنظام البياتي بصلاحية ${employee.role}. اختر العملية المطلوبة:`,
-      employeeId: employee.employeeId,
-      isBotAdmin: employee.isBotAdmin,
-      replyMarkup: telegramCommandMenu(employee.isBotAdmin),
-    };
-    return registerUnlinkedStart(message);
+  if (["start", "link"].includes(command.name)) {
+    if (!employee) return registerUnlinkedStart(message);
+    await clearSession(message.chat.id);
+    return menuResult(employee, `مرحبًا ${employee.fullName}.\nصلاحيتك: ${employee.role}\n\nاختر العملية المطلوبة — كل شيء بالأزرار:`);
   }
   if (!employee) return { text: "لا تمتلك الصلاحيات لاستخدام بوت البياتي. راجع إدارة المستشفى لربط حسابك." };
-  return executeCommand(employee, message, command);
+
+  // The single text button always wins, so a stuck flow is never a trap.
+  if (command.name === "menu") {
+    await clearSession(message.chat.id);
+    return menuResult(employee, "اختر العملية المطلوبة:");
+  }
+
+  const file = attachmentInput(message);
+  const flowReply = await routeFlowInput(employee, message.chat.id, message.from.id,
+    file ? { kind: "file", file: file as unknown as Record<string, unknown> } : { kind: "text", text: rawText });
+  if (flowReply) return flowReply;
+
+  if (command.name === "unknown" || !command.name) {
+    return menuResult(employee, "لا حاجة للكتابة — اختر ما تريد من الأزرار:");
+  }
+  return executeCommand(employee, message.chat.id, message.from.id, command.name);
 }
 
 async function processCallback(callback: TelegramCallbackQuery): Promise<CommandResult> {
   if (!callback.message) return { text: "تعذر تحديد محادثة الزر." };
-  const employee = await linkedEmployee(callback.message.chat.id, callback.from.id);
+  const chatId = callback.message.chat.id;
+  const employee = await linkedEmployee(chatId, callback.from.id);
   if (!employee) return { text: "هذا الحساب غير مربوط بالنظام. أرسل /start أولًا." };
-  const [scope, action, value = ""] = (callback.data || "").split(":");
-  const command = scope === "menu"
-    ? { name: action || "menu", args: "" }
-    : { name: scope || "menu", args: action || value };
-  return executeCommand(employee, { ...callback.message, from: callback.from }, command);
+  const [scope, value = ""] = (callback.data || "").split(":");
+
+  if (scope === "s") {
+    const input: FlowInput = value === "cancel" ? { kind: "cancel" }
+      : value === "skip" ? { kind: "skip" }
+      : value === "done" ? { kind: "done" }
+      : { kind: "index", index: Number(value) };
+    const reply = await routeFlowInput(employee, chatId, callback.from.id, input);
+    return reply || menuResult(employee, "انتهت هذه العملية. اختر ما تريد:");
+  }
+
+  if (scope === "adminapprove" || scope === "adminreject") {
+    const text = await reviewBotAdminRequest(employee, value, scope === "adminapprove" ? "مقبول" : "مرفوض");
+    return menuResult(employee, text);
+  }
+
+  await clearSession(chatId);
+  return executeCommand(employee, chatId, callback.from.id, scope === "menu" ? value : "menu");
 }
 
 export async function POST(request: Request) {
@@ -672,7 +955,7 @@ export async function POST(request: Request) {
     }
 
     const result = update.callback_query ? await processCallback(update.callback_query) : await processMessage(message);
-    await sendTelegramMessage(message.chat.id, result.text, result.replyMarkup || telegramMainKeyboard(Boolean(result.isBotAdmin)));
+    await sendTelegramMessage(message.chat.id, result.text, result.replyMarkup || telegramMainKeyboard());
     if (update.callback_query) await answerTelegramCallback(update.callback_query.id);
     const { error: processedError } = await supabase.from("telegram_updates").update({
       employee_id: result.employeeId || null,
