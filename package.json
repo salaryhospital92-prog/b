@@ -18,7 +18,9 @@
     "db:generate": "drizzle-kit generate",
     "telegram:webhook": "node --env-file=.env.local scripts/register-telegram-webhook.mjs",
     "verify": "node scripts/verify-deploy.mjs",
-    "ship": "cross-env-shell \"COMMIT_REF=$(git rev-parse HEAD) netlify deploy --build --prod && EXPECT_COMMIT=$(git rev-parse HEAD) npm run verify\""
+    "ship": "cross-env-shell \"COMMIT_REF=$(git rev-parse HEAD) netlify deploy --build --prod && EXPECT_COMMIT=$(git rev-parse HEAD) npm run verify\"",
+    "deploy:cf": "node scripts/deploy-cloudflare.mjs",
+    "ship:cf": "npm run build && npm run deploy:cf"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.2",
