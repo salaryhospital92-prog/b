@@ -1,6 +1,7 @@
 import { buildNewbornNames, getBillingMode, getInitialPrice, isBirthEntry, MAX_NEWBORNS, parseNewbornCount } from "../../../../lib/rules-engine";
 import { getSupabaseAdmin, readRuntimeVariable } from "../../../../lib/supabase-server";
 import { createLinkCode } from "../../../../lib/telegram-link";
+import { daysInMonth, weekdayName } from "../../../../lib/shift-planner";
 import {
   MAIN_MENU_LABEL,
   answerTelegramCallback,
@@ -48,7 +49,7 @@ const PATIENT_ROLES = new Set(["طبيب مقيم", "رئيس المقيمين",
 const HANDOVER_ROLES = new Set(["طبيب مقيم", "رئيس المقيمين", "مطور النظام"]);
 const MAX_TELEGRAM_FILE = 15 * 1024 * 1024;
 const ALLOWED_ATTACHMENT_MIME = new Set(["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif", "application/pdf"]);
-const FLOW_COMMANDS = new Set(["task", "followup", "done", "patient", "readmit", "handover", "attach", "linkstaff"]);
+const FLOW_COMMANDS = new Set(["task", "followup", "done", "patient", "readmit", "handover", "attach", "linkstaff", "availability"]);
 
 /**
  * Verified bot admins are the hospital's own operators, so they clear every
@@ -102,6 +103,8 @@ function helpText() {
     "• إعادة دخول مولود — إذا عاد مولود بعد خروجه، يُفتح ملفه الأصلي المرتبط بأمه بدل تسجيله من جديد.",
     "• تسليم مناوبة — تختار الطبيب المستلم، ثم تحدد المرضى من قائمة أزرار.",
     "• إرفاق ملف — تختار الوجهة والتصنيف بالأزرار، ثم ترسل الصورة أو الـPDF.",
+    "• أيام تفرّغي — تختار أيام الشهر القادم بالضغط عليها، فتصل مباشرة إلى رئيس المقيمين.",
+    "• جدول المناوبات — للإدارة: ملخص من أرسل أيامه وتوزيع المناوبات الحالي.",
     "• ربط موظف — للإدارة ومديري البوت: تختار الموظف، والبوت يعطيك رابطًا جاهزًا ترسله له.",
     "",
     "أثناء أي عملية يظهر زر «✖️ إلغاء» للتراجع دون حفظ أي شيء.",
@@ -735,6 +738,92 @@ async function finishAttachment(employee: LinkedEmployee, context: FlowContext) 
   return `✅ تم حفظ الملف ضمن «${category}» وربطه بالسجل.`;
 }
 
+/** Next month, as the roster always plans ahead. */
+function nextMonthKey() {
+  const now = new Date();
+  const next = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+  return {
+    key: `${next.getUTCFullYear()}-${String(next.getUTCMonth() + 1).padStart(2, "0")}-01`,
+    year: next.getUTCFullYear(),
+    month: next.getUTCMonth() + 1,
+    label: new Intl.DateTimeFormat("ar-IQ", { month: "long", year: "numeric", timeZone: "UTC" }).format(next),
+  };
+}
+
+async function availabilityDayOptions(): Promise<FlowOption[]> {
+  const target = nextMonthKey();
+  const total = daysInMonth(target.year, target.month);
+  return Array.from({ length: total }, (_, index) => {
+    const day = index + 1;
+    return { label: `${String(day).padStart(2, "0")} ${weekdayName(target.year, target.month, day).slice(0, 3)}`, value: String(day) };
+  });
+}
+
+async function finishAvailability(employee: LinkedEmployee, context: FlowContext) {
+  const target = nextMonthKey();
+  const days = Array.isArray(context.data.days) ? (context.data.days as string[]).map(Number).sort((a, b) => a - b) : [];
+  if (!days.length) return "لم تحدد أي يوم. ابدأ من جديد واختر أيام تفرغك.";
+  const preferred = String(context.data.preferredShift || "كلاهما");
+
+  const supabase = getSupabaseAdmin();
+  const { data: existing } = await supabase.from("shift_months").select("id,status").eq("month", target.key).maybeSingle();
+  let monthId = existing?.id;
+  if (existing?.status === "منشور") return `تم نشر جدول ${target.label} بالفعل — راجع رئيس المقيمين لأي تعديل.`;
+  if (!monthId) {
+    const { data, error } = await supabase.from("shift_months").insert({ month: target.key }).select("id").single();
+    if (error) throw error;
+    monthId = data.id;
+  }
+  const { error } = await supabase.from("shift_availability").upsert({
+    month_id: monthId,
+    employee_id: employee.employeeId,
+    available_days: days,
+    preferred_shift: preferred,
+    submitted_at: new Date().toISOString(),
+  }, { onConflict: "month_id,employee_id" });
+  if (error) throw error;
+
+  await recordActivity(employee, "إرسال أيام التفرغ", `أرسل ${days.length} يوم تفرغ لشهر ${target.label} عبر البوت`, "shift_month", String(monthId), { days, preferred });
+  return [
+    `✅ وصلت أيام تفرغك لشهر ${target.label}`,
+    `عدد الأيام: ${days.length}`,
+    `الأيام: ${days.join("، ")}`,
+    `المناوبة المفضلة: ${preferred}`,
+    "",
+    "سيصلك جدولك هنا فور اعتماده من رئيس المقيمين.",
+  ].join("\n");
+}
+
+async function rosterSummary(employee: LinkedEmployee) {
+  const target = nextMonthKey();
+  const supabase = getSupabaseAdmin();
+  const { data: month } = await supabase.from("shift_months").select("id,status,morning_start,evening_start").eq("month", target.key).maybeSingle();
+  if (!month) return `لم يبدأ إعداد جدول ${target.label} بعد.`;
+  const [{ data: assignments }, { data: availability }, { data: residents }] = await Promise.all([
+    supabase.from("shift_schedule_overview").select("work_date,shift,full_name").eq("month_id", month.id).order("work_date"),
+    supabase.from("shift_availability").select("employee_id").eq("month_id", month.id),
+    supabase.from("employees").select("id").eq("role", "طبيب مقيم").eq("status", "نشط"),
+  ]);
+  if (!assignments?.length) {
+    return [
+      `📅 جدول ${target.label} — ${month.status}`,
+      `أرسل أيامه: ${availability?.length || 0} من ${residents?.length || 0} طبيبًا`,
+      "",
+      "لم يُولَّد الجدول بعد. افتح «جدول المناوبات» في الموقع واضغط «توليد الجدول تلقائيًا».",
+    ].join("\n");
+  }
+  const counts = new Map<string, number>();
+  for (const row of assignments) counts.set(String(row.full_name), (counts.get(String(row.full_name)) || 0) + 1);
+  return [
+    `📅 جدول ${target.label} — ${month.status}`,
+    `إجمالي المناوبات: ${assignments.length}`,
+    "",
+    ...[...counts.entries()].sort((left, right) => right[1] - left[1]).map(([name, count]) => `• ${name}: ${count} مناوبة`),
+    "",
+    month.status === "منشور" ? "الجدول منشور ووصل الأطباء." : "للنشر والإرسال عبر واتساب افتح «جدول المناوبات» في الموقع.",
+  ].join("\n");
+}
+
 async function finishLinkStaff(employee: LinkedEmployee, context: FlowContext) {
   if (!allows(employee, MANAGEMENT_ROLES)) return "ربط الموظفين متاح للإدارة ومديري البوت فقط.";
   const targetId = Number(context.data.employeeId);
@@ -888,6 +977,14 @@ function buildFlows(employee: LinkedEmployee): Record<string, Flow> {
       ],
       finish: (context) => finishAttachment(employee, context),
     },
+    availability: {
+      title: "◷ أيام التفرّغ",
+      steps: [
+        { key: "days", prompt: `حدّد الأيام التي تستطيع فيها استلام مناوبة في ${nextMonthKey().label}:`, kind: "multi", options: availabilityDayOptions },
+        { key: "preferredShift", prompt: "أي مناوبة تفضّل؟", kind: "choice", options: staticOptions(["كلاهما", "صباحية", "مسائية"]) },
+      ],
+      finish: (context) => finishAvailability(employee, context),
+    },
     linkstaff: {
       title: "🔗 ربط موظف بالبوت",
       steps: [{ key: "employeeId", prompt: "اختر الموظف الذي تريد ربط حسابه بالبوت:", kind: "choice", options: unlinkedEmployeeOptions }],
@@ -932,6 +1029,10 @@ async function executeCommand(employee: LinkedEmployee, chatId: number, telegram
     return { text: reply.text, employeeId: employee.employeeId, isBotAdmin: employee.isBotAdmin, role: employee.role, replyMarkup: reply.replyMarkup };
   }
 
+  if (commandName === "roster") {
+    if (!allows(employee, MANAGEMENT_ROLES)) return menuResult(employee, "ملخص الجدول متاح للإدارة ورئيس المقيمين.");
+    return menuResult(employee, await rosterSummary(employee));
+  }
   if (commandName === "adminrequests") return botAdminRequests(employee);
   let text: string;
   if (commandName === "checkin") text = await attendance(employee, "دخول");

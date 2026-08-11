@@ -53,6 +53,8 @@ export function telegramCommandMenu(isBotAdmin = false, role = ""): TelegramRepl
   }
   if (allows(isBotAdmin, role, HANDOVER_ROLES)) inlineKeyboard.push([{ text: "🔄 تسليم مناوبة", callback_data: "menu:handover" }]);
   inlineKeyboard.push([{ text: "📎 إرفاق صورة أو PDF", callback_data: "menu:attach" }]);
+  if (role === "طبيب مقيم" || isBotAdmin) inlineKeyboard.push([{ text: "◷ أيام تفرّغي الشهر القادم", callback_data: "menu:availability" }]);
+  if (allows(isBotAdmin, role, MANAGEMENT_ROLES)) inlineKeyboard.push([{ text: "📅 جدول المناوبات", callback_data: "menu:roster" }]);
   if (allows(isBotAdmin, role, MANAGEMENT_ROLES)) inlineKeyboard.push([{ text: "🔗 ربط موظف بالبوت", callback_data: "menu:linkstaff" }]);
   if (isBotAdmin) inlineKeyboard.push([{ text: "🛡️ طلبات مديري البوت", callback_data: "menu:adminrequests" }]);
   inlineKeyboard.push([{ text: "❓ شرح الاستخدام", callback_data: "menu:help" }]);
@@ -73,6 +75,26 @@ export async function sendTelegramMessage(chatId: number, text: string, replyMar
     text,
     ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
   });
+}
+
+/**
+ * Sends the app icon with the caption, so an invite or a share carries the
+ * same square icon people see on their home screen.
+ */
+export async function sendTelegramAppCard(chatId: number, caption: string, replyMarkup?: TelegramReplyMarkup) {
+  const appUrl = (readRuntimeVariable("PUBLIC_APP_URL") || "").replace(/\/$/, "");
+  if (!appUrl) return sendTelegramMessage(chatId, caption, replyMarkup);
+  try {
+    return await telegramRequest("sendPhoto", {
+      chat_id: chatId,
+      photo: `${appUrl}/icons/icon-512.png`,
+      caption,
+      ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
+    });
+  } catch {
+    // A blocked or unreachable image must never swallow the message itself.
+    return sendTelegramMessage(chatId, caption, replyMarkup);
+  }
 }
 
 export async function answerTelegramCallback(callbackQueryId: string, text = "تم تنفيذ الأمر") {

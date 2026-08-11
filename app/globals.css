@@ -952,3 +952,84 @@ main { padding-top: 42px; }
 .implied-field small { color: var(--muted); font-size: 7px; }
 .newborn-count-field { display: grid; gap: 7px; }
 .empty-hint { margin: 15px 0 0; padding: 14px; border-radius: 13px; background: var(--surface); border: 1px dashed var(--line); color: var(--muted); font-size: 9px; line-height: 1.7; }
+
+/* ---- Resident shift schedule ---- */
+.shift-panel { display: flex; flex-direction: column; gap: 15px; }
+.shift-month-picker { display: flex; flex-direction: column; gap: 5px; font-size: 8px; color: var(--muted); }
+.shift-month-picker select { min-height: 34px; padding: 0 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--card); color: inherit; font: inherit; font-size: 9px; }
+.shift-status { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 13px; border: 1px solid var(--line); background: var(--surface); }
+.shift-status > span { width: 31px; height: 31px; display: grid; place-items: center; border-radius: 10px; background: var(--teal-soft); color: var(--teal); font-size: 14px; }
+.shift-status p { margin: 0; display: flex; flex-direction: column; gap: 2px; }
+.shift-status b { font-size: 10px; }
+.shift-status small { color: var(--muted); font-size: 8px; }
+.shift-status-published > span { background: #dff3e8; color: #1c7a4d; }
+.shift-status-drafting > span { background: #fdf1dd; color: #a4712a; }
+.shift-availability { display: flex; flex-direction: column; gap: 14px; padding: 19px; border-radius: 15px; border: 1px solid var(--line); background: var(--card); }
+.shift-chip { padding: 5px 11px; border-radius: 999px; background: var(--teal-soft); color: var(--teal); font-size: 8px; font-weight: 800; }
+.shift-day-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(52px, 1fr)); gap: 6px; }
+.shift-day { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; min-height: 46px; border-radius: 11px; border: 1px solid var(--line); background: var(--surface); color: inherit; cursor: pointer; transition: transform .12s ease, background .12s ease; }
+.shift-day b { font-size: 12px; }
+.shift-day small { font-size: 7px; color: var(--muted); }
+.shift-day:hover:not(:disabled) { transform: translateY(-1px); }
+.shift-day.on { background: var(--teal); border-color: var(--teal); color: #fff; }
+.shift-day.on small { color: rgba(255,255,255,.8); }
+.shift-day:disabled { opacity: .55; cursor: not-allowed; }
+.shift-quick-picks { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
+.shift-quick-picks button { min-height: 30px; padding: 0 12px; border-radius: 9px; border: 1px solid var(--line); background: var(--surface); color: inherit; font: inherit; font-size: 8px; font-weight: 700; cursor: pointer; }
+.shift-quick-picks span { margin-right: auto; color: var(--muted); font-size: 8px; }
+.shift-mine, .shift-submissions, .shift-share { padding: 15px; border-radius: 14px; border: 1px solid var(--line); background: var(--card); }
+.shift-mine b, .shift-submissions b, .shift-share b { display: block; font-size: 10px; margin-bottom: 9px; }
+.shift-mine ul, .shift-submissions ul, .shift-share-list { list-style: none; margin: 0; padding: 0; }
+.shift-mine li { display: flex; align-items: center; gap: 8px; min-height: 32px; border-top: 1px solid var(--line); font-size: 9px; }
+.shift-mine li i { width: 22px; height: 22px; display: grid; place-items: center; border-radius: 7px; background: var(--teal-soft); color: var(--teal); font-style: normal; font-size: 8px; font-weight: 800; }
+.shift-submissions li { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; min-height: 34px; border-top: 1px solid var(--line); font-size: 9px; }
+.shift-submissions li i { padding: 3px 9px; border-radius: 999px; background: var(--teal-soft); color: var(--teal); font-style: normal; font-size: 8px; font-weight: 800; }
+.shift-submissions li em { color: var(--muted); font-style: normal; font-size: 8px; }
+.shift-submissions li small { width: 100%; color: var(--muted); font-size: 7px; }
+.shift-missing { margin: 6px 0 0; color: #a4712a; font-size: 8px; }
+.shift-actions { display: flex; flex-wrap: wrap; gap: 9px; }
+.shift-warning { margin: 0; padding: 10px 13px; border-radius: 11px; background: #fdf1dd; color: #8a5d18; font-size: 9px; }
+.shift-share-actions { display: flex; flex-wrap: wrap; gap: 9px; margin-bottom: 11px; }
+.shift-share-list li { display: flex; align-items: center; gap: 9px; min-height: 34px; border-top: 1px solid var(--line); font-size: 9px; }
+.shift-share-list li i { padding: 3px 9px; border-radius: 999px; background: var(--surface); color: var(--muted); font-style: normal; font-size: 8px; }
+.shift-share-list li a { margin-right: auto; color: var(--teal); font-weight: 800; font-size: 8px; }
+.shift-share-list li em { margin-right: auto; color: var(--muted); font-style: normal; font-size: 8px; }
+.shift-preview { margin: 11px 0 0; padding: 13px; border-radius: 11px; background: var(--surface); border: 1px solid var(--line); color: var(--muted); font-family: ui-monospace, Consolas, monospace; font-size: 8px; line-height: 1.7; white-space: pre; overflow-x: auto; direction: ltr; text-align: right; }
+
+/* Branded roster board, matching the printed hospital rota layout */
+.roster-board { border-radius: 15px; border: 1px solid var(--line); background: var(--card); overflow: hidden; }
+.roster-brand { display: flex; align-items: center; gap: 11px; padding: 14px 16px; background: linear-gradient(135deg, var(--teal-dark), var(--teal)); color: #fff; }
+.roster-brand img { border-radius: 9px; background: rgba(255,255,255,.15); }
+.roster-brand div { display: flex; flex-direction: column; gap: 2px; }
+.roster-brand b { font-size: 12px; }
+.roster-brand small { font-size: 8px; opacity: .85; }
+.roster-brand-mark { margin-right: auto; font-size: 7px; opacity: .75; letter-spacing: .4px; }
+.roster-scroll { overflow-x: auto; }
+.roster-table { width: 100%; border-collapse: collapse; font-size: 9px; white-space: nowrap; }
+.roster-table th, .roster-table td { border: 1px solid var(--line); padding: 5px 7px; text-align: center; }
+.roster-table thead th { background: #1f2a37; color: #fff; font-size: 8px; font-weight: 800; position: sticky; top: 0; }
+.roster-table th.roster-date, .roster-table th.roster-weekday { background: #2f3b4a; }
+.roster-table th.roster-morning { background: #e08a2e; }
+.roster-table th.roster-night { background: #101820; }
+.roster-table td.roster-date { background: var(--surface); font-weight: 800; }
+.roster-table td.roster-weekday { background: var(--surface); color: var(--muted); font-size: 8px; }
+.roster-table tr.roster-weekend td.roster-date, .roster-table tr.roster-weekend td.roster-weekday { background: var(--teal-soft); color: var(--teal); }
+.roster-table td.roster-on { font-weight: 800; }
+.roster-table td.roster-on-morning { background: #fdf1dd; color: #8a5d18; }
+.roster-table td.roster-on-night { background: #e4ecf4; color: #24384f; }
+.roster-table td.roster-slot select { width: 100%; min-width: 92px; border: 0; background: transparent; color: inherit; font: inherit; font-size: 9px; text-align: center; cursor: pointer; }
+.roster-table td.roster-empty { background: repeating-linear-gradient(135deg, transparent, transparent 5px, var(--surface) 5px, var(--surface) 10px); }
+.roster-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 9px; padding: 11px 15px; border-top: 1px solid var(--line); color: var(--muted); font-size: 8px; }
+
+@media print {
+  body * { visibility: hidden; }
+  #albayati-roster, #albayati-roster * { visibility: visible; }
+  #albayati-roster { position: absolute; inset: 0; border: 0; }
+  .roster-foot button { display: none; }
+  .roster-scroll { overflow: visible; }
+}
+
+@media (max-width: 720px) {
+  .shift-day-grid { grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); }
+  .shift-actions .primary-action, .shift-actions .ghost-action { width: 100%; }
+}

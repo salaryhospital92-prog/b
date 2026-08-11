@@ -6,7 +6,11 @@ export async function generateMetadata(): Promise<Metadata> {
   const requestHeaders = await headers();
   const host = requestHeaders.get("host") ?? "localhost:3000";
   const protocol = host.includes("localhost") ? "http" : "https";
-  const imageUrl = `${protocol}://${host}/og-registration.png`;
+  const origin = `${protocol}://${host}`;
+  // The app icon, not a screenshot: WhatsApp and Telegram render the square
+  // thumbnail beside the link, so a shared link looks like the installed app.
+  const iconUrl = `${origin}/icons/icon-512.png`;
+  const imageUrl = `${origin}/og-registration.png`;
 
   return {
     title: "نظام البياتي الطبي الذكي",
@@ -25,18 +29,24 @@ export async function generateMetadata(): Promise<Metadata> {
       title: "البياتي",
       statusBarStyle: "black-translucent",
     },
+    metadataBase: new URL(origin),
     openGraph: {
       title: "نظام البياتي الطبي الذكي",
       description: "تسجيل أدق. عمل أسهل.",
       locale: "ar_IQ",
       type: "website",
-      images: [{ url: imageUrl, width: 1672, height: 941, alt: "نظام البياتي الطبي الذكي" }],
+      siteName: "البياتي",
+      url: origin,
+      images: [
+        { url: iconUrl, width: 512, height: 512, alt: "أيقونة تطبيق البياتي" },
+        { url: imageUrl, width: 1672, height: 941, alt: "نظام البياتي الطبي الذكي" },
+      ],
     },
     twitter: {
-      card: "summary_large_image",
+      card: "summary",
       title: "نظام البياتي الطبي الذكي",
       description: "تسجيل أدق. عمل أسهل.",
-      images: [imageUrl],
+      images: [iconUrl],
     },
   };
 }

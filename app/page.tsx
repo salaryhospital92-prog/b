@@ -5,10 +5,11 @@ import { buildNewbornNames, getInitialPrice, isBirthEntry, MAX_NEWBORNS } from "
 import { getSupabaseBrowser } from "../lib/supabase-browser";
 import LoginLanding from "./login-landing";
 import ResidentWorkflow from "./resident-workflow";
+import ShiftSchedule from "./shift-schedule";
 
 type Role = "doctor" | "chief" | "accounts" | "admin" | "developer";
 type DemoAccount = { id: string; role: Role; label: string; name: string; username: string; password: string; department: string };
-type View = "overview" | "handover" | "days" | "workLogs" | "objections" | "audit" | "payments" | "reports" | "settings" | "registry" | "personalSalary" | "capabilities" | "accessRequests" | "attendance";
+type View = "overview" | "handover" | "days" | "workLogs" | "objections" | "audit" | "payments" | "reports" | "settings" | "registry" | "personalSalary" | "capabilities" | "accessRequests" | "attendance" | "shifts";
 type Toast = { message: string; kind: "success" | "info" } | null;
 type PatientRecord = { id: number; fullName: string; fileNumber: string; department: string; admissionDate: string; paymentCategory: string; entryType: string; patientStatus: string; billingMode: string; attendingDoctor?: string | null; isNewborn?: boolean; newbornCount?: number };
 type EmployeeRecord = { id: number; fullName: string; employeeNumber: string; role: string; specialty: string; status: string };
@@ -176,6 +177,7 @@ export default function Home() {
       { id: "overview" as View, label: "الرئيسية", icon: "⌂" },
       { id: "handover" as View, label: "استلام المناوبة", icon: "⇄" },
       { id: "registry" as View, label: "تسجيل مريض", icon: "✚" },
+      { id: "shifts" as View, label: "جدول المناوبات", icon: "◷" },
       { id: "workLogs" as View, label: "سجل المناوبات", icon: "▤" },
       { id: "objections" as View, label: "اعتراضاتي", icon: "!" },
       { id: "reports" as View, label: "كشف الحساب", icon: "▥" },
@@ -184,6 +186,7 @@ export default function Home() {
     if (role === "chief") return [
       { id: "overview" as View, label: "الرئيسية", icon: "⌂" },
       { id: "handover" as View, label: "تسليم المناوبات", icon: "⇄" },
+      { id: "shifts" as View, label: "جدول المناوبات", icon: "◷" },
       { id: "workLogs" as View, label: "سجلات الأطباء", icon: "▤" },
       { id: "objections" as View, label: "الاعتراضات", icon: "!" },
       { id: "personalSalary" as View, label: "راتبي الشخصي", icon: "◇" },
@@ -204,6 +207,7 @@ export default function Home() {
     if (role === "admin") return [
       { id: "overview" as View, label: "لوحة القيادة", icon: "⌂" },
       { id: "attendance" as View, label: "الحضور والنشاط", icon: "◉" },
+      { id: "shifts" as View, label: "جدول المناوبات", icon: "◷" },
       { id: "registry" as View, label: "مركز التسجيل", icon: "✚" },
       { id: "workLogs" as View, label: "سجلات المناوبات", icon: "▤" },
       { id: "reports" as View, label: "التقارير الشاملة", icon: "▥" },
@@ -1353,6 +1357,7 @@ export default function Home() {
     if (view === "registry") return renderRegistry();
     if (view === "handover") return renderHandover();
     if (view === "attendance") return renderAttendance();
+    if (view === "shifts") return <ShiftSchedule accountName={currentRole.name} notify={notify} />;
     if (view === "personalSalary") return renderPersonalSalary();
     if (view === "settings") return renderSettings();
     if (view === "reports") return renderReports();
