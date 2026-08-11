@@ -1,6 +1,8 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { planMonth } from "../lib/shift-planner";
+import { rosterImageBlob } from "../lib/roster-image";
 
 type ShiftName = "صباحية" | "مسائية";
 type Assignment = { day: number; shift: ShiftName; employeeId: number; fullName: string };
@@ -40,6 +42,78 @@ function monthOptions() {
   });
 }
 
+
+function RosterBoard({ month, doctors, assignments, domId, onChangeCell, busy, readOnly }: {
+  month: MonthInfo;
+  doctors: Doctor[];
+  assignments: Assignment[];
+  domId?: string;
+  onChangeCell?: (day: number, shift: ShiftName, employeeId: number) => void;
+  busy?: boolean;
+  readOnly?: boolean;
+}) {
+  const allDays = Array.from({ length: month.days }, (_, index) => index + 1);
+  const cellFor = (day: number, shift: ShiftName) => assignments.find((item) => item.day === day && item.shift === shift);
+  return (
+    <div className="roster-board" id={domId}>
+      <div className="roster-brand">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/icons/icon-192.png" alt="" width={38} height={38} />
+        <div><b>مقيمو مستشفى البياتي</b><small>جدول المناوبات — {month.label}</small></div>
+        <span className="roster-brand-mark">نظام البياتي الطبي الذكي</span>
+      </div>
+      <div className="roster-scroll">
+        <table className="roster-table">
+          <thead>
+            <tr>
+              <th className="roster-date">التاريخ</th>
+              <th className="roster-weekday">اليوم</th>
+              {doctors.map((doctor) => <th key={doctor.id} className="roster-doctor">{doctor.fullName}</th>)}
+              <th className="roster-morning">مورنك</th>
+              <th className="roster-night">نايت</th>
+            </tr>
+          </thead>
+          <tbody>
+            {allDays.map((day) => {
+              const onDuty = assignments.filter((item) => item.day === day);
+              const isWeekend = [5, 6].includes(new Date(Date.UTC(month.year, month.monthNumber - 1, day)).getUTCDay());
+              return (
+                <tr key={day} className={isWeekend ? "roster-weekend" : ""}>
+                  <td className="roster-date">{day}</td>
+                  <td className="roster-weekday">{weekday(month.year, month.monthNumber, day)}</td>
+                  {doctors.map((doctor) => {
+                    const shift = onDuty.find((item) => item.employeeId === doctor.id);
+                    return <td key={doctor.id} className={shift ? `roster-on roster-on-${shift.shift === "صباحية" ? "morning" : "night"}` : ""}>{shift ? doctor.fullName : ""}</td>;
+                  })}
+                  {SHIFTS.map((shift) => {
+                    const current = cellFor(day, shift);
+                    return (
+                      <td key={shift} className={`roster-slot ${current ? "" : "roster-empty"}`}>
+                        {readOnly || !onChangeCell
+                          ? <span>{current?.fullName || "—"}</span>
+                          : (
+                            <select value={current?.employeeId || 0} onChange={(event) => onChangeCell(day, shift, Number(event.target.value))} disabled={busy} aria-label={`${shift} ليوم ${day}`}>
+                              <option value={0}>—</option>
+                              {doctors.map((doctor) => <option key={doctor.id} value={doctor.id}>{doctor.fullName}</option>)}
+                            </select>
+                          )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <div className="roster-foot">
+        <span>مورنك {month.morning_start} · نايت {month.evening_start} · {month.shift_hours} ساعة</span>
+        {!readOnly && <button type="button" className="ghost-action" onClick={() => window.print()}>طباعة / حفظ PDF</button>}
+      </div>
+    </div>
+  );
+}
+
 export default function ShiftSchedule({ accountName, notify }: { accountName: string; notify: (message: string, kind?: "success" | "info") => void }) {
   const months = useMemo(() => monthOptions(), []);
   const [monthKey, setMonthKey] = useState(months[1]?.key || months[0].key);
@@ -52,6 +126,8 @@ export default function ShiftSchedule({ accountName, notify }: { accountName: st
   const [warnings, setWarnings] = useState<string[]>([]);
   const [shareLinks, setShareLinks] = useState<ShareLink[]>([]);
   const [whatsappText, setWhatsappText] = useState("");
+  const [demo, setDemo] = useState<Assignment[] | null>(null);
+  const [sharing, setSharing] = useState(false);
 
   // Kept in a ref so a fresh notify() identity each render never re-triggers the fetch.
   const notifyRef = useRef(notify);
@@ -158,6 +234,64 @@ export default function ShiftSchedule({ accountName, notify }: { accountName: st
     }
   }
 
+  /**
+   * A throwaway roster so the chief can see the layout before anyone submits.
+   * Runs entirely in the browser and writes nothing — no API call, no database.
+   */
+  function buildDemo() {
+    if (!data) return;
+    const allDays = Array.from({ length: data.month.days }, (_, index) => index + 1);
+    const plan = planMonth({
+      year: data.month.year,
+      month: data.month.monthNumber,
+      doctors: data.doctors.map((doctor, index) => ({
+        employeeId: doctor.id,
+        fullName: doctor.fullName,
+        // Staggered days off, but loose enough that the demo month comes out fully covered.
+        availableDays: allDays.filter((day) => (day + index) % 5 !== 0),
+        preferredShift: index === 1 ? "مسائية" : "كلاهما",
+      })),
+      doctorsPerShift: 1,
+    });
+    setDemo(plan.assignments);
+    notify("هذه معاينة تجريبية فقط — لم يُحفظ أي شيء في قاعدة البيانات");
+  }
+
+  async function shareAsImage(rows: Assignment[], watermark?: string) {
+    if (!data) return;
+    setSharing(true);
+    try {
+      const blob = await rosterImageBlob({
+        monthLabel: data.month.label,
+        year: data.month.year,
+        month: data.month.monthNumber,
+        days: data.month.days,
+        doctors: data.doctors.map((doctor) => ({ id: doctor.id, fullName: doctor.fullName })),
+        assignments: rows,
+        morningStart: data.month.morning_start,
+        eveningStart: data.month.evening_start,
+        shiftHours: data.month.shift_hours,
+        watermark,
+      });
+      const file = new File([blob], `albayati-roster-${data.month.key}.png`, { type: "image/png" });
+      if (navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ files: [file], title: `جدول المناوبات — ${data.month.label}` });
+        return;
+      }
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = file.name;
+      anchor.click();
+      URL.revokeObjectURL(url);
+      notify("نُزّلت الصورة — أرفقها في واتساب أو أي محادثة");
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "تعذر إنشاء الصورة", "info");
+    } finally {
+      setSharing(false);
+    }
+  }
+
   function toggleDay(day: number) {
     setSelectedDays((days) => days.includes(day) ? days.filter((value) => value !== day) : [...days, day].sort((a, b) => a - b));
   }
@@ -173,7 +307,6 @@ export default function ShiftSchedule({ accountName, notify }: { accountName: st
 
   const { month, canManage, me, doctors, availability, assignments } = data;
   const allDays = Array.from({ length: month.days }, (_, index) => index + 1);
-  const cellFor = (day: number, shift: ShiftName) => assignments.find((item) => item.day === day && item.shift === shift);
 
   return (
     <section className="panel shift-panel">
@@ -256,60 +389,33 @@ export default function ShiftSchedule({ accountName, notify }: { accountName: st
           <div className="shift-actions">
             <button className="primary-action" onClick={generate} disabled={saving || !availability.length}>{saving ? "جارٍ التوزيع..." : "توليد الجدول تلقائيًا"}<span>⚡</span></button>
             <button className="ghost-action" onClick={publish} disabled={saving || !assignments.length}>نشر وإشعار الأطباء<span>↗</span></button>
+            <button className="ghost-action" onClick={buildDemo} disabled={!doctors.length}>معاينة جدول تجريبي<span>👁</span></button>
+            <button className="ghost-action" onClick={() => shareAsImage(assignments)} disabled={sharing || !assignments.length}>{sharing ? "جارٍ التجهيز..." : "مشاركة كصورة"}<span>🖼</span></button>
           </div>
 
           {warnings.map((warning) => <p key={warning} className="shift-warning">⚠ {warning}</p>)}
 
-          {assignments.length > 0 && (
-            <div className="roster-board" id="albayati-roster">
-              <div className="roster-brand">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src="/icons/icon-192.png" alt="" width={38} height={38} />
-                <div><b>مقيمو مستشفى البياتي</b><small>جدول المناوبات — {month.label}</small></div>
-                <span className="roster-brand-mark">نظام البياتي الطبي الذكي</span>
+          {demo && (
+            <div className="roster-demo">
+              <div className="roster-demo-head">
+                <b>معاينة تجريبية — {month.label}</b>
+                <span>بيانات وهمية للعرض فقط · لم تُحفظ في قاعدة البيانات</span>
+                <button className="ghost-action" onClick={() => shareAsImage(demo, "معاينة تجريبية")} disabled={sharing}>{sharing ? "جارٍ التجهيز..." : "مشاركة الصورة"}</button>
+                <button className="ghost-action" onClick={() => setDemo(null)}>إغلاق المعاينة</button>
               </div>
-              <div className="roster-scroll">
-                <table className="roster-table">
-                  <thead>
-                    <tr>
-                      <th className="roster-date">التاريخ</th>
-                      <th className="roster-weekday">اليوم</th>
-                      {doctors.map((doctor) => <th key={doctor.id} className="roster-doctor">{doctor.fullName}</th>)}
-                      <th className="roster-morning">مورنك</th>
-                      <th className="roster-night">نايت</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {allDays.map((day) => {
-                      const onDuty = assignments.filter((item) => item.day === day);
-                      const isWeekend = [5, 6].includes(new Date(Date.UTC(month.year, month.monthNumber - 1, day)).getUTCDay());
-                      return (
-                        <tr key={day} className={isWeekend ? "roster-weekend" : ""}>
-                          <td className="roster-date">{day}</td>
-                          <td className="roster-weekday">{weekday(month.year, month.monthNumber, day)}</td>
-                          {doctors.map((doctor) => {
-                            const shift = onDuty.find((item) => item.employeeId === doctor.id);
-                            return <td key={doctor.id} className={shift ? `roster-on roster-on-${shift.shift === "صباحية" ? "morning" : "night"}` : ""}>{shift ? doctor.fullName : ""}</td>;
-                          })}
-                          {SHIFTS.map((shift) => (
-                            <td key={shift} className={`roster-slot ${cellFor(day, shift) ? "" : "roster-empty"}`}>
-                              <select value={cellFor(day, shift)?.employeeId || 0} onChange={(event) => changeCell(day, shift, Number(event.target.value))} disabled={saving} aria-label={`${shift} ليوم ${day}`}>
-                                <option value={0}>—</option>
-                                {doctors.map((doctor) => <option key={doctor.id} value={doctor.id}>{doctor.fullName}</option>)}
-                              </select>
-                            </td>
-                          ))}
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-              <div className="roster-foot">
-                <span>مورنك {month.morning_start} · نايت {month.evening_start} · {month.shift_hours} ساعة</span>
-                <button type="button" className="ghost-action" onClick={() => window.print()}>طباعة / حفظ PDF</button>
-              </div>
+              <RosterBoard month={month} doctors={doctors} assignments={demo} readOnly />
             </div>
+          )}
+
+          {assignments.length > 0 && (
+            <RosterBoard
+              month={month}
+              doctors={doctors}
+              assignments={assignments}
+              domId="albayati-roster"
+              onChangeCell={changeCell}
+              busy={saving}
+            />
           )}
 
           {whatsappText && (

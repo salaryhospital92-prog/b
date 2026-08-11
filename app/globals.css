@@ -1033,3 +1033,11 @@ main { padding-top: 42px; }
   .shift-day-grid { grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); }
   .shift-actions .primary-action, .shift-actions .ghost-action { width: 100%; }
 }
+
+.roster-demo { display: flex; flex-direction: column; gap: 11px; padding: 13px; border-radius: 16px; border: 1px dashed var(--teal); background: var(--teal-soft); }
+.roster-demo-head { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; }
+.roster-demo-head b { font-size: 10px; }
+.roster-demo-head span { color: var(--muted); font-size: 8px; }
+.roster-demo-head .ghost-action { margin-right: auto; min-height: 30px; font-size: 8px; }
+.roster-demo-head .ghost-action + .ghost-action { margin-right: 0; }
+.roster-table td.roster-slot span { display: block; font-size: 9px; font-weight: 600; }
