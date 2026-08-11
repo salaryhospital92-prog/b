@@ -18,7 +18,10 @@ export async function generateMetadata(): Promise<Metadata> {
     description: "منصة ذكية لإدارة عمل وحسابات الأطباء المقيمين بدقة وشفافية.",
     manifest: "/manifest.webmanifest",
     icons: {
+      // A real .ico first: browsers ask for /favicon.ico before reading any
+      // metadata, and the catch-all route would otherwise answer it with HTML.
       icon: [
+        { url: "/favicon.ico", sizes: "32x32", type: "image/x-icon" },
         { url: "/icons/favicon-32.png", sizes: "32x32", type: "image/png" },
         { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
       ],

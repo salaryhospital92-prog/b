@@ -10,6 +10,10 @@
  *
  * Credentials are read from the command line or the environment and are never
  * written to the repository.
+ *
+ * Always send every field together: Supabase replaces the whole SMTP block on
+ * each PATCH, so posting one key alone silently wipes the rest and drops the
+ * project back to the shared sender.
  */
 
 const PROJECT = process.env.SUPABASE_PROJECT_REF || "zpyuurzbjhfnbrjeacbk";
