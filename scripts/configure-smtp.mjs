@@ -29,7 +29,7 @@ if (!token) fail("SUPABASE_ACCESS_TOKEN غير مضبوط");
 
 const config = {
   smtp_host: argument("host"),
-  smtp_port: Number(argument("port", "587")),
+  smtp_port: argument("port", "587"),
   smtp_user: argument("user"),
   smtp_pass: argument("pass"),
   smtp_admin_email: argument("sender"),

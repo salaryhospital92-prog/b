@@ -535,23 +535,17 @@ export default function Home({ initialUser }: { initialUser: SessionUser | null 
   }
 
   /** Email is used for one thing only: proving an address to reset a password. */
-  async function sendEmailLink(email: string, purpose: "signin" | "reset"): Promise<string | null> {
+  async function sendEmailLink(email: string): Promise<string | null> {
     try {
-      const supabase = await getSupabaseBrowser();
-      const { error } = await supabase.auth.signInWithOtp({
-        email,
-        options: {
-          emailRedirectTo: `${window.location.origin}/${purpose === "reset" ? "dashboard?reset=1" : "dashboard"}`,
-          shouldCreateUser: false,
-        },
+      const response = await fetch("/api/auth/recover", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
       });
-      if (!error) return null;
-      if (/not found|signups not allowed/i.test(error.message)) {
-        return "هذا البريد غير مسجل في النظام. اطلب حسابًا ليعتمده رئيس المقيمين.";
-      }
-      return error.message;
+      const payload = await response.json();
+      return response.ok ? null : (payload.error || "تعذر إرسال الرابط");
     } catch {
-      return "تعذر إرسال الرابط";
+      return "تعذر الاتصال بالخادم";
     }
   }
 

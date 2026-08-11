@@ -8,7 +8,7 @@ type LoginLandingProps = {
   isInstalled: boolean;
   notificationPermission: NotificationPermission | "unsupported";
   onLogin: (username: string, password: string) => Promise<string | null>;
-  onEmailLink: (email: string, purpose: "signin" | "reset") => Promise<string | null>;
+  onEmailLink: (email: string) => Promise<string | null>;
   onRequestAccount: () => void;
   onInstall: (platform: "ios" | "android") => void;
   onEnableNotifications: () => void;
@@ -97,7 +97,7 @@ export default function LoginLanding({ isInstalled, notificationPermission, onLo
           // The server decides; the browser never holds a password to compare against.
           const failure = mode === "password"
             ? await onLogin(username, password)
-            : await onEmailLink(email, "reset");
+            : await onEmailLink(email);
           setSigningIn(false);
           if (failure) { setLoginError(failure); if (mode === "password") setPassword(""); }
           else if (mode !== "password") setNotice(`أرسلنا رابطًا إلى ${email}. افتحه من هذا الجهاز.`);
