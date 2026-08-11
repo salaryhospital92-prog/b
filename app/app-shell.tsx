@@ -9,6 +9,7 @@ import ResidentWorkflow from "./resident-workflow";
 import ShiftSchedule from "./shift-schedule";
 import InpatientDays from "./inpatient-days";
 import AccountMenu from "./account-menu";
+import IssueAccount from "./issue-account";
 
 type Role = "doctor" | "chief" | "accounts" | "admin" | "developer";
 type DemoAccount = { id: string; role: Role; label: string; name: string; username: string; department: string };
@@ -199,6 +200,7 @@ export default function Home({ initialUser }: { initialUser: SessionUser | null 
   const [reportData, setReportData] = useState<ReportData | null>(null);
   const [accessOpen, setAccessOpen] = useState(false);
   const [resetToken, setResetToken] = useState("");
+  const [issueOpen, setIssueOpen] = useState(false);
   const [accessSaving, setAccessSaving] = useState(false);
   const [accessRequests, setAccessRequests] = useState<AccessRequestRecord[]>([]);
   const [accessLoading, setAccessLoading] = useState(true);
@@ -532,25 +534,7 @@ export default function Home({ initialUser }: { initialUser: SessionUser | null 
     window.scrollTo(0, 0);
   }
 
-  /** Google, Apple, or an emailed link — all end at the same server check. */
-  async function providerLogin(provider: "google" | "apple"): Promise<string | null> {
-    try {
-      const supabase = await getSupabaseBrowser();
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider,
-        options: { redirectTo: `${window.location.origin}/dashboard` },
-      });
-      if (!error) return null;
-      // Supabase says so plainly when a provider has not been switched on yet.
-      if (/not enabled|disabled|Unsupported provider/i.test(error.message)) {
-        return `الدخول عبر ${provider === "google" ? "Google" : "Apple"} غير مفعّل بعد في إعدادات النظام.`;
-      }
-      return error.message;
-    } catch {
-      return "تعذر بدء تسجيل الدخول";
-    }
-  }
-
+  /** Email is used for one thing only: proving an address to reset a password. */
   async function sendEmailLink(email: string, purpose: "signin" | "reset"): Promise<string | null> {
     try {
       const supabase = await getSupabaseBrowser();
@@ -1617,13 +1601,13 @@ export default function Home({ initialUser }: { initialUser: SessionUser | null 
         isInstalled={isInstalled}
         notificationPermission={notificationPermission}
         onLogin={signIn}
-        onProviderLogin={providerLogin}
         onEmailLink={sendEmailLink}
         onRequestAccount={() => setAccessOpen(true)}
         onInstall={installApp}
         onEnableNotifications={enableNotifications}
         onToggleTheme={toggleTheme}
       />
+      {issueOpen && <IssueAccount onClose={() => setIssueOpen(false)} notify={notify} />}
       {accessModal}
       {installGuideModal}
       {toast && <div className={`toast ${toast.kind}`}><span>{toast.kind === "success" ? "✓" : "i"}</span>{toast.message}</div>}
@@ -1664,7 +1648,8 @@ export default function Home({ initialUser }: { initialUser: SessionUser | null 
               <AccountMenu
                 name={currentRole.name}
                 label={currentRole.label}
-                onRequestAccount={() => setAccessOpen(true)}
+                canIssueAccounts={["رئيس المقيمين", "الإدارة العليا", "مطور النظام"].includes(sessionUser?.role || "")}
+                onIssueAccount={() => setIssueOpen(true)}
                 onSignOut={signOut}
                 notify={notify}
               />
@@ -1696,6 +1681,7 @@ export default function Home({ initialUser }: { initialUser: SessionUser | null 
         </nav>
       </div>
 
+      {issueOpen && <IssueAccount onClose={() => setIssueOpen(false)} notify={notify} />}
       {accessModal}
       {installGuideModal}
       {toast && <div className={`toast ${toast.kind}`}><span>{toast.kind === "success" ? "✓" : "i"}</span>{toast.message}</div>}

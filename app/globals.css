@@ -1354,3 +1354,70 @@ main { padding-top: 42px; }
   .account-panel > button, .account-panel > button > span { transition: none; }
   .account-panel > button:hover > span { transform: none; }
 }
+
+/* ---- Sign-in card: password reveal, recovery, and the reset screen ---- */
+.password-field { position: relative; display: flex; align-items: center; }
+.password-field input { width: 100%; padding-left: 62px; }
+.password-field button {
+  position: absolute; left: 8px;
+  min-height: 26px; padding: 0 9px;
+  border-radius: 8px; border: 1px solid var(--line);
+  background: var(--surface); color: var(--muted);
+  font: inherit; font-size: 9px; font-weight: 700; cursor: pointer;
+  transition: color .2s ease, border-color .2s ease;
+}
+.password-field button:hover { color: var(--teal); border-color: var(--teal); }
+
+.login-forgot {
+  align-self: flex-start;
+  margin-top: -4px;
+  padding: 0;
+  border: 0; background: none;
+  color: var(--teal); font: inherit; font-size: 10px; font-weight: 700;
+  cursor: pointer;
+}
+.login-forgot:hover { text-decoration: underline; }
+
+.login-notice {
+  margin: 0;
+  padding: 10px 13px;
+  border-radius: 11px;
+  background: var(--teal-soft);
+  color: var(--teal);
+  font-size: 10px;
+  line-height: 1.7;
+}
+
+.reset-page { min-height: 100dvh; display: grid; place-items: center; padding: 24px; background: var(--cream); }
+.reset-card { width: min(420px, 100%); }
+
+/* ---- Issue an account against an employee number ---- */
+.issue-modal { width: min(520px, 100%); display: flex; flex-direction: column; gap: 14px; }
+.issue-search { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 9px; }
+.issue-employee { display: flex; align-items: center; gap: 11px; padding: 13px; border-radius: 14px; border: 1px solid var(--line); background: var(--surface); }
+.issue-employee p { margin: 0; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.issue-employee b { font-size: 11px; }
+.issue-employee small { color: var(--muted); font-size: 8px; }
+.issue-tag { margin-right: auto; padding: 4px 10px; border-radius: 999px; font-style: normal; font-size: 8px; font-weight: 800; white-space: nowrap; }
+.issue-tag.ok { background: #dff3e8; color: #1c7a4d; }
+.issue-tag.warn { background: #fdf1dd; color: #a4712a; }
+.issue-actions { display: flex; flex-wrap: wrap; gap: 9px; }
+.issue-note { margin: 0; color: var(--muted); font-size: 9px; line-height: 1.7; }
+
+.issue-result { display: flex; flex-direction: column; gap: 12px; padding: 15px; border-radius: 15px; border: 1px solid var(--teal); background: var(--teal-soft); }
+.issue-result-head { display: flex; align-items: center; gap: 10px; }
+.issue-result-head > span { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 10px; background: var(--paper); color: var(--teal); font-size: 15px; }
+.issue-result-head p { margin: 0; display: flex; flex-direction: column; gap: 2px; }
+.issue-result-head b { font-size: 11px; }
+.issue-result-head small { color: var(--muted); font-size: 8px; }
+.issue-result dl { margin: 0; display: grid; gap: 8px; }
+.issue-result dl > div { display: flex; align-items: center; justify-content: space-between; gap: 11px; padding: 10px 13px; border-radius: 11px; background: var(--paper); }
+.issue-result dt { color: var(--muted); font-size: 9px; }
+.issue-result dd { margin: 0; font-size: 12px; font-weight: 800; }
+.issue-password { font-family: ui-monospace, Consolas, monospace; letter-spacing: .6px; user-select: all; }
+.issue-warn { margin: 0; padding: 10px 13px; border-radius: 11px; background: #fdf1dd; color: #8a5d18; font-size: 9px; line-height: 1.7; }
+
+@media (max-width: 560px) {
+  .issue-search { grid-template-columns: 1fr; }
+  .issue-result dl > div { flex-direction: column; align-items: flex-start; gap: 4px; }
+}

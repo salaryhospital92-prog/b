@@ -8,7 +8,6 @@ type LoginLandingProps = {
   isInstalled: boolean;
   notificationPermission: NotificationPermission | "unsupported";
   onLogin: (username: string, password: string) => Promise<string | null>;
-  onProviderLogin: (provider: "google" | "apple") => Promise<string | null>;
   onEmailLink: (email: string, purpose: "signin" | "reset") => Promise<string | null>;
   onRequestAccount: () => void;
   onInstall: (platform: "ios" | "android") => void;
@@ -23,8 +22,8 @@ const features = [
   { title: "تقارير وإشعارات في وقتها", description: "ملخصات يومية وأسبوعية وشهرية، وتنبيهات مهمة تصل إلى جهاز الطبيب بعد تفعيلها." },
 ];
 
-export default function LoginLanding({ isInstalled, notificationPermission, onLogin, onProviderLogin, onEmailLink, onRequestAccount, onInstall, onEnableNotifications, onToggleTheme }: LoginLandingProps) {
-  const [mode, setMode] = useState<"password" | "email" | "reset">("password");
+export default function LoginLanding({ isInstalled, notificationPermission, onLogin, onEmailLink, onRequestAccount, onInstall, onEnableNotifications, onToggleTheme }: LoginLandingProps) {
+  const [mode, setMode] = useState<"password" | "reset">("password");
   const [email, setEmail] = useState("");
   const [notice, setNotice] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -98,17 +97,15 @@ export default function LoginLanding({ isInstalled, notificationPermission, onLo
           // The server decides; the browser never holds a password to compare against.
           const failure = mode === "password"
             ? await onLogin(username, password)
-            : await onEmailLink(email, mode === "reset" ? "reset" : "signin");
+            : await onEmailLink(email, "reset");
           setSigningIn(false);
           if (failure) { setLoginError(failure); if (mode === "password") setPassword(""); }
           else if (mode !== "password") setNotice(`أرسلنا رابطًا إلى ${email}. افتحه من هذا الجهاز.`);
         }}>
           <h2>{mode === "reset" ? "استعادة كلمة المرور" : "تسجيل الدخول"}</h2>
           <p className="login-intro">{mode === "password"
-            ? "أدخل اسم المستخدم وكلمة المرور، أو ادخل بحسابك المعتمد مباشرة."
-            : mode === "email"
-              ? "سنرسل رابط دخول إلى بريدك المعتمد في النظام."
-              : "أدخل بريدك المعتمد وسنرسل رابطًا لتعيين كلمة مرور جديدة."}</p>
+            ? "أدخل اسم المستخدم وكلمة المرور الصادرين لك من إدارة النظام."
+            : "أدخل بريدك المعتمد وسنرسل رابطًا لتعيين كلمة مرور جديدة."}</p>
           {mode === "password" ? (
             <div className="login-credentials">
               <label><span>اسم المستخدم</span><input dir="ltr" autoComplete="username" value={username} onChange={(event) => { setUsername(event.target.value); setLoginError(""); }} required /></label>
@@ -131,18 +128,8 @@ export default function LoginLanding({ isInstalled, notificationPermission, onLo
           {loginError && <p className="login-error" role="alert">{loginError}</p>}
           <button className="login-submit" type="submit" disabled={signingIn}>{signingIn
             ? "جارٍ التنفيذ..."
-            : mode === "password" ? "الدخول إلى الحساب" : mode === "email" ? "أرسل رابط الدخول" : "أرسل رابط الاستعادة"} <span>←</span></button>
+            : mode === "password" ? "الدخول إلى الحساب" : "أرسل رابط الاستعادة"} <span>←</span></button>
 
-          {mode === "password" && (
-            <>
-              <div className="login-divider"><span>أو ادخل مباشرة عبر</span></div>
-              <div className="login-providers">
-                <button type="button" disabled={signingIn} onClick={async () => { setLoginError(""); const failure = await onProviderLogin("google"); if (failure) setLoginError(failure); }}><span className="provider-mark google">G</span>Google</button>
-                <button type="button" disabled={signingIn} onClick={async () => { setLoginError(""); const failure = await onProviderLogin("apple"); if (failure) setLoginError(failure); }}><span className="provider-mark apple"></span>Apple</button>
-                <button type="button" disabled={signingIn} onClick={() => { setMode("email"); setNotice(""); setLoginError(""); }}><span className="provider-mark email">@</span>البريد</button>
-              </div>
-            </>
-          )}
           <button className="login-request" type="button" onClick={onRequestAccount}>ليس لديك حساب؟ طلب حساب جديد</button>
           <div className="login-notification-row"><span aria-hidden="true">🔔</span><p><b>إشعارات المناوبات</b><small>{notificationPermission === "granted" ? "مفعّلة على هذا الجهاز" : "فعّلها ليصلك ما يحتاج إجراءك"}</small></p><button type="button" onClick={onEnableNotifications} disabled={notificationPermission === "granted" || notificationPermission === "unsupported"}>{notificationPermission === "granted" ? "مفعّلة" : "تفعيل"}</button></div>
           <small className="login-security">كلمة المرور تُفحص على الخادم ولا تُحفظ في المتصفح. بعد خمس محاولات خاطئة يتوقف الدخول ربع ساعة.</small>

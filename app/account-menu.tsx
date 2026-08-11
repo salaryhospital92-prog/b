@@ -10,10 +10,11 @@ type Profile = {
 
 type Panel = "menu" | "profile" | "password";
 
-export default function AccountMenu({ name, label, onRequestAccount, onSignOut, notify }: {
+export default function AccountMenu({ name, label, canIssueAccounts, onIssueAccount, onSignOut, notify }: {
   name: string;
   label: string;
-  onRequestAccount: () => void;
+  canIssueAccounts: boolean;
+  onIssueAccount: () => void;
   onSignOut: () => void;
   notify: (message: string, kind?: "success" | "info") => void;
 }) {
@@ -154,7 +155,7 @@ export default function AccountMenu({ name, label, onRequestAccount, onSignOut, 
               </header>
               <button type="button" onClick={() => openPanel("profile")}><span>👤</span>تعديل معلوماتي</button>
               <button type="button" onClick={() => openPanel("password")}><span>🔑</span>تغيير كلمة المرور</button>
-              <button type="button" onClick={() => { setOpen(false); onRequestAccount(); }}><span>＋</span>تسجيل حساب جديد</button>
+              {canIssueAccounts && <button type="button" onClick={() => { setOpen(false); onIssueAccount(); }}><span>＋</span>إصدار حساب لموظف</button>}
               <button type="button" className="danger" onClick={() => { setOpen(false); onSignOut(); }}><span>↪</span>تسجيل الخروج</button>
             </>
           )}
