@@ -1421,3 +1421,28 @@ main { padding-top: 42px; }
   .issue-search { grid-template-columns: 1fr; }
   .issue-result dl > div { flex-direction: column; align-items: flex-start; gap: 4px; }
 }
+
+/* ---- Sidebar: brand and footer pinned, the list scrolls between them ---- */
+/* The sidebar is fixed, so a menu longer than the screen simply hid its own
+   tail — logout among it — with no way to reach it. */
+.sidebar nav {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,.22) transparent;
+  -webkit-overflow-scrolling: touch;
+}
+.sidebar nav::-webkit-scrollbar { width: 5px; }
+.sidebar nav::-webkit-scrollbar-track { background: transparent; }
+.sidebar nav::-webkit-scrollbar-thumb { border-radius: 999px; background: rgba(255,255,255,.2); }
+.sidebar nav::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,.34); }
+
+/* The brand and the footer are anchors: they must not scroll with the list. */
+.sidebar .brand, .sidebar-toggle, .sidebar-bottom { flex-shrink: 0; }
+.sidebar-bottom { padding-bottom: env(safe-area-inset-bottom); }
+
+/* A hint that the list continues past the fold, without adding a scrollbar. */
+.sidebar nav { mask-image: linear-gradient(to bottom, transparent 0, #000 10px, #000 calc(100% - 14px), transparent 100%); }
+@media (prefers-reduced-motion: reduce) { .sidebar nav { scroll-behavior: auto; } }
