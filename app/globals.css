@@ -796,6 +796,73 @@ main { padding-top: 42px; }
   .top-actions .notification-button { display: grid; }
   .notifications-panel { position: fixed; top: 70px; left: 11px; right: 11px; width: auto; }
 }
+
+/* Mobile navigation: strong contrast, calm brand colors, and clear selection */
+@media (max-width: 900px) {
+  .app-shell .mobile-nav {
+    height: calc(78px + env(safe-area-inset-bottom));
+    padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
+    gap: 6px;
+    background: color-mix(in srgb, var(--paper) 96%, transparent);
+    border-top: 1px solid color-mix(in srgb, var(--teal) 18%, var(--line));
+    box-shadow: 0 -10px 30px rgba(7, 70, 57, .12);
+  }
+  .app-shell .mobile-nav button {
+    min-width: 0;
+    min-height: 58px;
+    max-width: none;
+    padding: 6px 5px;
+    border: 1px solid transparent;
+    border-radius: 14px;
+    background: transparent;
+    color: color-mix(in srgb, var(--muted) 92%, var(--ink));
+    justify-content: center;
+    gap: 3px;
+    transition: background .18s ease, color .18s ease, border-color .18s ease, transform .18s ease, box-shadow .18s ease;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .app-shell .mobile-nav button:hover { background: var(--surface); color: var(--teal-dark); }
+  .app-shell .mobile-nav button:active { transform: scale(.97); }
+  .app-shell .mobile-nav button:focus { outline: none; }
+  .app-shell .mobile-nav button:focus-visible { outline: 3px solid color-mix(in srgb, var(--teal) 30%, transparent); outline-offset: 1px; }
+  .app-shell .mobile-nav button.active {
+    background: var(--teal);
+    border-color: var(--teal);
+    color: #ffffff;
+    box-shadow: 0 8px 18px color-mix(in srgb, var(--teal) 25%, transparent);
+  }
+  .app-shell .mobile-nav .nav-icon,
+  .app-shell.sidebar-collapsed .mobile-nav .nav-icon,
+  .app-shell.sidebar-open .mobile-nav .nav-icon {
+    width: 29px;
+    height: 29px;
+    flex: 0 0 29px;
+    border: 0;
+    border-radius: 9px;
+    background: transparent;
+    color: currentColor;
+    box-shadow: none;
+    font-size: 22px;
+    font-weight: 700;
+    transform: none;
+  }
+  .app-shell .mobile-nav button.active .nav-icon { background: rgba(255, 255, 255, .12); color: #ffffff; }
+  .app-shell .mobile-nav small {
+    color: currentColor;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1.1;
+  }
+  :root[data-theme="dark"] .app-shell .mobile-nav {
+    background: rgba(20, 55, 47, .97);
+    border-top-color: #376055;
+    box-shadow: 0 -12px 34px rgba(0, 0, 0, .28);
+  }
+  :root[data-theme="dark"] .app-shell .mobile-nav button { color: #c1d6ce; }
+  :root[data-theme="dark"] .app-shell .mobile-nav button.active { background: #5bc7a2; border-color: #5bc7a2; color: #082f29; }
+  :root[data-theme="dark"] .app-shell .mobile-nav button.active .nav-icon { background: rgba(8, 47, 41, .12); color: #082f29; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .login-feature-copy h1 i { animation: none; }.login-feature-copy p { opacity: 1; transform: none; transition: none; }
 }
