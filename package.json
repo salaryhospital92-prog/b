@@ -20,7 +20,8 @@
     "verify": "node scripts/verify-deploy.mjs",
     "ship": "cross-env-shell \"COMMIT_REF=$(git rev-parse HEAD) netlify deploy --build --prod && EXPECT_COMMIT=$(git rev-parse HEAD) npm run verify\"",
     "deploy:cf": "node scripts/deploy-cloudflare.mjs",
-    "ship:cf": "npm run build && npm run deploy:cf"
+    "ship:cf": "npm run build && npm run deploy:cf",
+    "smtp": "node scripts/configure-smtp.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.2",
