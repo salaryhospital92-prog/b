@@ -47,7 +47,10 @@ export function telegramCommandMenu(isBotAdmin = false, role = ""): TelegramRepl
     [{ text: "➕ إضافة مهمة", callback_data: "menu:task" }],
   ];
   if (allows(isBotAdmin, role, MANAGEMENT_ROLES)) inlineKeyboard.push([{ text: "🏥 الموجودون الآن", callback_data: "menu:present" }]);
-  if (allows(isBotAdmin, role, PATIENT_ROLES)) inlineKeyboard.push([{ text: "🧾 تسجيل مريضة", callback_data: "menu:patient" }]);
+  if (allows(isBotAdmin, role, PATIENT_ROLES)) {
+    inlineKeyboard.push([{ text: "🧾 تسجيل مريضة", callback_data: "menu:patient" }]);
+    inlineKeyboard.push([{ text: "👶 إعادة دخول مولود", callback_data: "menu:readmit" }]);
+  }
   if (allows(isBotAdmin, role, HANDOVER_ROLES)) inlineKeyboard.push([{ text: "🔄 تسليم مناوبة", callback_data: "menu:handover" }]);
   inlineKeyboard.push([{ text: "📎 إرفاق صورة أو PDF", callback_data: "menu:attach" }]);
   if (allows(isBotAdmin, role, MANAGEMENT_ROLES)) inlineKeyboard.push([{ text: "🔗 ربط موظف بالبوت", callback_data: "menu:linkstaff" }]);

@@ -1,5 +1,5 @@
 import { getSupabaseAdmin } from "../../../lib/supabase-server";
-import { buildNewbornNames, getBillingMode, getInitialPrice } from "../../../lib/rules-engine";
+import { buildNewbornNames, getBillingMode, getInitialPrice, isBirthEntry, MAX_NEWBORNS, parseNewbornCount } from "../../../lib/rules-engine";
 import { recordEmployeeActivitySafely } from "../../../lib/activity";
 
 type DbRecord = Record<string, unknown>;
@@ -29,17 +29,20 @@ function errorMessage(error: unknown) {
 export async function GET() {
   try {
     const supabase = getSupabaseAdmin();
-    const [patientResult, employeeResult] = await Promise.all([
+    const [patientResult, employeeResult, readmissionResult] = await Promise.all([
       supabase.from("patients").select("*").eq("is_newborn", false).order("created_at", { ascending: false }).limit(12),
       supabase.from("employees").select("*").order("created_at", { ascending: false }).limit(12),
+      supabase.from("newborn_readmission_candidates").select("*").order("discharge_date", { ascending: false }).limit(60),
     ]);
 
     if (patientResult.error) throw patientResult.error;
     if (employeeResult.error) throw employeeResult.error;
+    if (readmissionResult.error) throw readmissionResult.error;
 
     return Response.json({
       patients: (patientResult.data || []).map((row) => camelizeRecord(row as DbRecord)),
       employees: (employeeResult.data || []).map((row) => camelizeRecord(row as DbRecord)),
+      readmissionCandidates: (readmissionResult.data || []).map((row) => camelizeRecord(row as DbRecord)),
     });
   } catch (error) {
     return Response.json({ error: errorMessage(error) }, { status: 500 });
@@ -58,14 +61,19 @@ export async function POST(request: Request) {
       const fileNumber = clean(payload.fileNumber);
       const admissionDate = clean(payload.admissionDate);
       const department = clean(payload.department);
-      const gender = clean(payload.gender);
       const entryType = clean(payload.entryType) || "استشارية";
+      // A birth is recorded on the mother's file, so the form never asks for gender there.
+      const gender = isBirthEntry(entryType) ? "أنثى" : clean(payload.gender);
       const initialPrice = Math.max(0, Number(payload.initialPrice) || getInitialPrice(entryType));
-      const newbornCount = Math.max(0, Math.min(5, Number(payload.newbornCount) || 0));
+      const requestedNewborns = isBirthEntry(entryType) ? parseNewbornCount(payload.newbornCount) : 0;
 
       if (!fullName || !fileNumber || !admissionDate || !department || !gender) {
         return Response.json({ error: "يرجى إكمال الحقول الأساسية للمريضة" }, { status: 400 });
       }
+      if (requestedNewborns === null) {
+        return Response.json({ error: `عدد المواليد يجب أن يكون رقمًا بين 0 و${MAX_NEWBORNS}` }, { status: 400 });
+      }
+      const newbornCount = requestedNewborns;
 
       const newbornNames = buildNewbornNames(fullName, newbornCount);
       const { data, error } = await supabase.rpc("register_patient", {
@@ -155,6 +163,36 @@ export async function PATCH(request: Request) {
 
     if (!Number.isInteger(patientId) || patientId <= 0) {
       return Response.json({ error: "معرّف المريضة غير صحيح" }, { status: 400 });
+    }
+
+    // A newborn returning after discharge reopens the record already tied to the
+    // mother's file — no second registration, no duplicate patient.
+    if (action === "readmit_newborn") {
+      const { data, error } = await getSupabaseAdmin().rpc("readmit_newborn", {
+        p_newborn_id: patientId,
+        p_department: clean(payload.department),
+        p_attending_doctor: clean(payload.attendingDoctor),
+        p_notes: clean(payload.notes),
+        p_recorded_by: actorName,
+      });
+      if (error) {
+        if (String(error.message).includes("already admitted")) {
+          return Response.json({ error: "هذا المولود مسجل حاليًا كنشط — لا حاجة لإعادة الدخول" }, { status: 409 });
+        }
+        throw error;
+      }
+      const result = data as { record: DbRecord; mother: DbRecord };
+      const message = `أُعيد فتح ملف ${result.record.full_name} المرتبط بملف الأم ${result.mother.full_name}`;
+      await recordEmployeeActivitySafely({
+        employeeName: actorName,
+        activityType: "إعادة دخول مولود",
+        description: message,
+        entityType: "patient",
+        entityId: patientId,
+        source: "web",
+        metadata: { motherId: result.mother.id, motherFileNumber: result.mother.file_number },
+      });
+      return Response.json({ patient: camelizeRecord(result.record), mother: camelizeRecord(result.mother), message });
     }
 
     if (action !== "convert_to_inpatient" && action !== "discharge") {

@@ -943,3 +943,12 @@ main { padding-top: 42px; }
 @media (prefers-reduced-motion: reduce) {
   .login-feature-copy h1 i { animation: none; }.login-feature-copy p { opacity: 1; transform: none; transition: none; }
 }
+
+/* Newborn readmission and implied-value fields */
+.readmission-form { margin-top: 15px; }
+.implied-field { display: flex; flex-direction: column; gap: 6px; }
+.implied-field > p { margin: 0; display: flex; flex-direction: column; gap: 2px; min-height: 37px; justify-content: center; padding: 0 12px; border-radius: 11px; background: var(--teal-soft); border: 1px dashed var(--teal); }
+.implied-field b { font-size: 10px; color: var(--teal); }
+.implied-field small { color: var(--muted); font-size: 7px; }
+.newborn-count-field { display: grid; gap: 7px; }
+.empty-hint { margin: 15px 0 0; padding: 14px; border-radius: 13px; background: var(--surface); border: 1px dashed var(--line); color: var(--muted); font-size: 9px; line-height: 1.7; }

@@ -1,4 +1,4 @@
-import { getBillingMode, getInitialPrice } from "../../../../lib/rules-engine";
+import { buildNewbornNames, getBillingMode, getInitialPrice, isBirthEntry, MAX_NEWBORNS, parseNewbornCount } from "../../../../lib/rules-engine";
 import { getSupabaseAdmin, readRuntimeVariable } from "../../../../lib/supabase-server";
 import { createLinkCode } from "../../../../lib/telegram-link";
 import {
@@ -48,7 +48,7 @@ const PATIENT_ROLES = new Set(["طبيب مقيم", "رئيس المقيمين",
 const HANDOVER_ROLES = new Set(["طبيب مقيم", "رئيس المقيمين", "مطور النظام"]);
 const MAX_TELEGRAM_FILE = 15 * 1024 * 1024;
 const ALLOWED_ATTACHMENT_MIME = new Set(["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif", "application/pdf"]);
-const FLOW_COMMANDS = new Set(["task", "followup", "done", "patient", "handover", "attach", "linkstaff"]);
+const FLOW_COMMANDS = new Set(["task", "followup", "done", "patient", "readmit", "handover", "attach", "linkstaff"]);
 
 /**
  * Verified bot admins are the hospital's own operators, so they clear every
@@ -98,7 +98,8 @@ function helpText() {
     "• تسجيل الحضور والانصراف — ضغطة واحدة.",
     "• المهام — البوت يعرض لك مهامك كأزرار، تضغط على المهمة لبدء متابعتها أو إنهائها.",
     "• إضافة مهمة — البوت يسألك خطوة بخطوة: العنوان، ثم الموظف، ثم الأولوية، ثم الموعد.",
-    "• تسجيل مريضة — يسألك عن الاسم، ثم يعرض الجنس والقسم ونوع الدخول والطبيب كأزرار.",
+    "• تسجيل مريضة — أزرار لكل خطوة. في حالات الولادة لا يسأل عن الجنس (أنثى بالضرورة) ويسأل عن عدد المواليد.",
+    "• إعادة دخول مولود — إذا عاد مولود بعد خروجه، يُفتح ملفه الأصلي المرتبط بأمه بدل تسجيله من جديد.",
     "• تسليم مناوبة — تختار الطبيب المستلم، ثم تحدد المرضى من قائمة أزرار.",
     "• إرفاق ملف — تختار الوجهة والتصنيف بالأزرار، ثم ترسل الصورة أو الـPDF.",
     "• ربط موظف — للإدارة ومديري البوت: تختار الموظف، والبوت يعطيك رابطًا جاهزًا ترسله له.",
@@ -459,6 +460,39 @@ async function activePatientOptions(): Promise<FlowOption[]> {
   return (data || []).map((patient) => ({ label: `${patient.full_name} · ${patient.file_number}`.slice(0, 60), value: String(patient.file_number) }));
 }
 
+type ReadmissionCandidate = {
+  newborn_id: number; newborn_name: string; newborn_file_number: string;
+  twin_order: number | null; discharge_date: string | null;
+  mother_id: number; mother_name: string; mother_file_number: string;
+};
+
+async function readmissionCandidates(motherId?: number) {
+  let query = getSupabaseAdmin().from("newborn_readmission_candidates")
+    .select("newborn_id,newborn_name,newborn_file_number,twin_order,discharge_date,mother_id,mother_name,mother_file_number");
+  if (motherId) query = query.eq("mother_id", motherId);
+  const { data, error } = await query.order("discharge_date", { ascending: false }).limit(60);
+  if (error) throw error;
+  return (data || []) as ReadmissionCandidate[];
+}
+
+async function readmissionMotherOptions(): Promise<FlowOption[]> {
+  const candidates = await readmissionCandidates();
+  const mothers = new Map<number, ReadmissionCandidate>();
+  for (const candidate of candidates) if (!mothers.has(candidate.mother_id)) mothers.set(candidate.mother_id, candidate);
+  return [...mothers.values()].map((candidate) => ({
+    label: `${candidate.mother_name} · ${candidate.mother_file_number}`.slice(0, 60),
+    value: String(candidate.mother_id),
+  }));
+}
+
+async function readmissionNewbornOptions(context: FlowContext): Promise<FlowOption[]> {
+  const candidates = await readmissionCandidates(Number(context.data.motherId));
+  return candidates.map((candidate) => ({
+    label: `${candidate.newborn_name}${candidate.twin_order ? ` (${candidate.twin_order})` : ""} · ${candidate.newborn_file_number}`.slice(0, 60),
+    value: String(candidate.newborn_id),
+  }));
+}
+
 async function unlinkedEmployeeOptions(): Promise<FlowOption[]> {
   const supabase = getSupabaseAdmin();
   const [{ data: employees, error }, { data: accounts, error: accountsError }] = await Promise.all([
@@ -549,10 +583,14 @@ async function finishPatient(employee: LinkedEmployee, context: FlowContext) {
   if (!allows(employee, PATIENT_ROLES)) return "صلاحيتك لا تسمح بتسجيل المرضى.";
   const fullName = String(context.data.fullName || "").trim();
   const requestedFile = String(context.data.fileNumber || "auto").trim();
-  const gender = String(context.data.gender || "");
   const department = String(context.data.department || "");
   const entryType = String(context.data.entryType || "");
   const attendingDoctor = String(context.data.attendingDoctor || employee.fullName);
+  // A birth case is always the mother's file, so the bot never asks for gender there.
+  const gender = isBirthEntry(entryType) ? "أنثى" : String(context.data.gender || "");
+  const newbornCount = isBirthEntry(entryType) ? parseNewbornCount(context.data.newbornCount) : 0;
+  if (newbornCount === null) return `عدد المواليد غير صحيح. أرسل رقمًا بين 0 و${MAX_NEWBORNS}، أو ابدأ من جديد.`;
+  const newbornNames = buildNewbornNames(fullName, newbornCount);
   if (!fullName || !gender || !department || !entryType) return "تعذر التسجيل: بيانات ناقصة. ابدأ من جديد.";
   const fileNumber = requestedFile === "auto" ? await nextFileNumber() : requestedFile;
 
@@ -570,15 +608,49 @@ async function finishPatient(employee: LinkedEmployee, context: FlowContext) {
     p_billing_mode: getBillingMode(entryType),
     p_notes: `مسجل عبر بوت البياتي بواسطة ${employee.fullName}`,
     p_initial_price: getInitialPrice(entryType),
-    p_newborn_names: [],
+    p_newborn_names: newbornNames,
   });
   if (error) {
     if (error.code === "23505" || error.message.includes("duplicate key")) return `رقم الملف ${fileNumber} مسجل مسبقًا. ابدأ من جديد واختر «توليد رقم تلقائي».`;
     throw error;
   }
   const result = data as { record?: Row };
-  await recordActivity(employee, "تسجيل مريض", `أنشأ ملف المريض ${fullName} عبر البوت`, "patient", String(result.record?.id || ""), { fileNumber, entryType });
-  return `✅ تم تسجيل ${fullName}\nرقم الملف: ${fileNumber}\nالقسم: ${department}\nنوع الدخول: ${entryType}\nالطبيب: ${attendingDoctor}`;
+  await recordActivity(employee, "تسجيل مريض", `أنشأ ملف المريض ${fullName} عبر البوت`, "patient", String(result.record?.id || ""), { fileNumber, entryType, newbornCount });
+  return [
+    `✅ تم تسجيل ${fullName}`,
+    `رقم الملف: ${fileNumber}`,
+    `القسم: ${department}`,
+    `نوع الدخول: ${entryType}`,
+    `الطبيب: ${attendingDoctor}`,
+    newbornNames.length ? `المواليد (${newbornNames.length}): ${newbornNames.join("، ")}\nكل مولود له ملف مستقل مرتبط بملف الأم.` : "",
+  ].filter(Boolean).join("\n");
+}
+
+async function finishReadmission(employee: LinkedEmployee, context: FlowContext) {
+  if (!allows(employee, PATIENT_ROLES)) return "صلاحيتك لا تسمح بتسجيل دخول المرضى.";
+  const newbornId = Number(context.data.newbornId);
+  if (!Number.isInteger(newbornId) || newbornId <= 0) return "لم يتم تحديد المولود. ابدأ من جديد.";
+  const { data, error } = await getSupabaseAdmin().rpc("readmit_newborn", {
+    p_newborn_id: newbornId,
+    p_department: String(context.data.department || ""),
+    p_attending_doctor: employee.fullName,
+    p_notes: String(context.data.notes || ""),
+    p_recorded_by: employee.fullName,
+  });
+  if (error) {
+    if (error.message.includes("already admitted")) return "هذا المولود مسجل حاليًا كنشط — لا حاجة لإعادة الدخول.";
+    throw error;
+  }
+  const result = data as { record?: Row; mother?: Row };
+  await recordActivity(employee, "إعادة دخول مولود", `أعاد إدخال ${result.record?.full_name} على ملفه المرتبط بالأم`, "patient", String(result.record?.id || ""), { motherId: result.mother?.id });
+  return [
+    `✅ تم تسجيل عودة ${result.record?.full_name}`,
+    `على ملفه الأصلي: ${result.record?.file_number}`,
+    `مرتبط بملف الأم: ${result.mother?.full_name} · ${result.mother?.file_number}`,
+    `القسم: ${result.record?.department}`,
+    "",
+    "لم يُنشأ أي ملف جديد — نفس السجل أُعيد فتحه وسُجّلت العودة في تاريخه.",
+  ].join("\n");
 }
 
 async function finishHandover(employee: LinkedEmployee, context: FlowContext) {
@@ -727,6 +799,8 @@ function buildFlows(employee: LinkedEmployee): Record<string, Flow> {
     patient: {
       title: "🧾 تسجيل مريضة",
       steps: [
+        // Entry type comes first: it decides whether gender and newborn count are even asked.
+        { key: "entryType", prompt: "نوع الدخول؟", kind: "choice", options: staticOptions(["استشارية", "ولادة طبيعية", "عملية قيصرية", "رقود"]) },
         { key: "fullName", prompt: "ما هو اسم المريضة الكامل؟", kind: "text" },
         {
           key: "fileNumber",
@@ -735,17 +809,51 @@ function buildFlows(employee: LinkedEmployee): Record<string, Flow> {
           allowText: true,
           options: async () => [{ label: "🔢 توليد رقم تلقائي", value: "auto" }],
         },
-        { key: "gender", prompt: "الجنس؟", kind: "choice", options: staticOptions(["أنثى", "ذكر"]) },
+        {
+          key: "gender",
+          prompt: "الجنس؟",
+          kind: "choice",
+          options: staticOptions(["أنثى", "ذكر"]),
+          when: (context) => !isBirthEntry(String(context.data.entryType || "")),
+        },
+        {
+          key: "newbornCount",
+          prompt: "كم عدد المواليد؟",
+          kind: "choice",
+          allowText: true,
+          options: async () => [
+            { label: "مولود واحد", value: "1" },
+            { label: "توأم (2)", value: "2" },
+            { label: "ثلاثة توائم", value: "3" },
+            { label: "أربعة توائم", value: "4" },
+            { label: "يُسجل لاحقًا", value: "0" },
+          ],
+          when: (context) => isBirthEntry(String(context.data.entryType || "")),
+        },
         {
           key: "department",
           prompt: "القسم الطبي؟",
           kind: "choice",
           options: staticOptions(["النسائية والتوليد", "الجراحة العامة", "الطب الباطني", "طب الأطفال", "الطوارئ", "العناية المركزة"]),
         },
-        { key: "entryType", prompt: "نوع الدخول؟", kind: "choice", options: staticOptions(["استشارية", "ولادة طبيعية", "عملية قيصرية", "رقود"]) },
         { key: "attendingDoctor", prompt: "الطبيب المسؤول؟", kind: "choice", options: attendingDoctorOptions },
       ],
       finish: (context) => finishPatient(employee, context),
+    },
+    readmit: {
+      title: "👶 إعادة دخول مولود",
+      steps: [
+        { key: "motherId", prompt: "اختر ملف الأم:", kind: "choice", options: readmissionMotherOptions },
+        { key: "newbornId", prompt: "أي مولود عاد إلى المستشفى؟", kind: "choice", options: readmissionNewbornOptions },
+        {
+          key: "department",
+          prompt: "إلى أي قسم يدخل؟",
+          kind: "choice",
+          options: staticOptions(["حديثو الولادة", "طب الأطفال", "العناية المركزة", "الطوارئ"]),
+        },
+        { key: "notes", prompt: "سبب العودة أو أي ملاحظة؟", kind: "text", optional: true },
+      ],
+      finish: (context) => finishReadmission(employee, context),
     },
     handover: {
       title: "🔄 تسليم مناوبة",
@@ -810,7 +918,7 @@ function menuResult(employee: LinkedEmployee, text: string): CommandResult {
 
 async function executeCommand(employee: LinkedEmployee, chatId: number, telegramUserId: number, commandName: string): Promise<CommandResult> {
   if (FLOW_COMMANDS.has(commandName)) {
-    if (commandName === "patient" && !allows(employee, PATIENT_ROLES)) return menuResult(employee, "صلاحيتك لا تسمح بتسجيل المرضى.");
+    if ((commandName === "patient" || commandName === "readmit") && !allows(employee, PATIENT_ROLES)) return menuResult(employee, "صلاحيتك لا تسمح بتسجيل المرضى.");
     if (commandName === "handover" && !allows(employee, HANDOVER_ROLES)) return menuResult(employee, "صلاحيتك لا تسمح بتسليم المناوبات.");
     if (commandName === "linkstaff" && !allows(employee, MANAGEMENT_ROLES)) return menuResult(employee, "ربط الموظفين متاح للإدارة ومديري البوت فقط.");
     const flow = buildFlows(employee)[commandName];

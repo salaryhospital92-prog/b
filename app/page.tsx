@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { buildNewbornNames, getInitialPrice } from "../lib/rules-engine";
+import { buildNewbornNames, getInitialPrice, isBirthEntry, MAX_NEWBORNS } from "../lib/rules-engine";
 import { getSupabaseBrowser } from "../lib/supabase-browser";
 import LoginLanding from "./login-landing";
 import ResidentWorkflow from "./resident-workflow";
@@ -49,6 +49,7 @@ type OperationalTask = { id: number; title: string; status: string; priority: st
 type AttendanceData = { summary: { present: number; total: number; arrivalsToday: number; activeLast15Minutes: number; openTasks: number }; presence: PresenceRecord[]; sessions: AttendanceSession[]; tasks: OperationalTask[] };
 type TelegramStatusData = { botUsername: string; configuration: { tokenConfigured: boolean; secretConfigured: boolean; publicUrlConfigured: boolean; webhookReady: boolean }; linkedAccounts: { id: number; employeeId: number; employeeName: string; employeeRole: string; username?: string | null; status: string; isBotAdmin: boolean; pairedAt: string; lastSeenAt: string }[]; recentUpdates: { updateId: number; employeeName?: string | null; command?: string | null; status: string; error?: string | null; receivedAt: string; processedAt?: string | null }[]; openTasks: number; botAdmins: { employeeName: string; username?: string | null; lastSeenAt: string }[]; pendingAdminRequests: { id: number; username?: string | null; displayName?: string | null; requestedAt: string }[]; bootstrapAdmins: { employeeName: string; username?: string | null; phoneNumber: string; status: string; verifiedAt?: string | null }[] };
 type TelegramLink = { code: string; employeeName: string; expiresAt: string; deepLink: string } | null;
+type ReadmissionCandidate = { newbornId: number; newbornName: string; newbornFileNumber: string; twinOrder: number | null; dischargeDate: string | null; motherId: number; motherName: string; motherFileNumber: string };
 
 const IQD = new Intl.NumberFormat("en-US");
 const money = (value: number) => `${IQD.format(value)} د.ع`;
@@ -157,11 +158,18 @@ export default function Home() {
   const [attendanceFilter, setAttendanceFilter] = useState("");
   const [telegramStatus, setTelegramStatus] = useState<TelegramStatusData | null>(null);
   const [telegramLink, setTelegramLink] = useState<TelegramLink>(null);
+  const [readmissionCandidates, setReadmissionCandidates] = useState<ReadmissionCandidate[]>([]);
+  const [readmissionMotherId, setReadmissionMotherId] = useState(0);
+  const [readmissionNewbornId, setReadmissionNewbornId] = useState(0);
+  const [readmissionSaving, setReadmissionSaving] = useState(false);
 
   const currentRole = demoAccounts.find((item) => item.id === activeAccountId) || demoAccounts[0];
   const role = currentRole.role;
   const doctorProfile = doctorProfiles[activeAccountId] || doctorProfiles["doctor-fanar"];
+  const isBirthCase = isBirthEntry(patientEntryType);
   const newbornNames = buildNewbornNames(patientName, newbornCount);
+  const readmissionMothers = [...new Map(readmissionCandidates.map((row) => [row.motherId, row])).values()];
+  const readmissionNewborns = readmissionCandidates.filter((row) => row.motherId === readmissionMotherId);
 
   const navItems = useMemo(() => {
     if (role === "doctor") return [
@@ -240,6 +248,7 @@ export default function Home() {
         if (active) {
           setRegisteredPatients(data.patients ?? []);
           setRegisteredEmployees(data.employees ?? []);
+          setReadmissionCandidates(data.readmissionCandidates ?? []);
         }
       })
       .catch(() => {
@@ -674,6 +683,38 @@ export default function Home() {
     }
   }
 
+  async function submitReadmission(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const payload = Object.fromEntries(new FormData(form).entries());
+    if (!readmissionNewbornId) return notify("اختر المولود العائد أولًا", "info");
+    setReadmissionSaving(true);
+    try {
+      const response = await fetch("/api/registry", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "readmit_newborn",
+          patientId: readmissionNewbornId,
+          actorName: currentRole.name,
+          department: payload.department,
+          notes: payload.notes,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "تعذر تسجيل عودة المولود");
+      setReadmissionCandidates((rows) => rows.filter((row) => row.newbornId !== readmissionNewbornId));
+      setReadmissionNewbornId(0);
+      setReadmissionMotherId(0);
+      form.reset();
+      notify(data.message);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "تعذر تسجيل عودة المولود", "info");
+    } finally {
+      setReadmissionSaving(false);
+    }
+  }
+
   async function updatePatientLifecycle(patientId: number, action: "convert_to_inpatient" | "discharge") {
     try {
       const response = await fetch("/api/registry", {
@@ -990,6 +1031,7 @@ export default function Home() {
 
           <div className="registry-main">
             {activeTab === "patient" ? (
+              <>
               <form className="registry-form" onSubmit={(event) => submitRegistry(event, "patient")}>
                 <div className="registry-form-head"><div><span>♙</span><p><b>بيانات المريض</b><small>الحقول المعلّمة مطلوبة لإنشاء الملف</small></p></div><StatusPill tone="approved">نموذج جديد</StatusPill></div>
                 <div className="form-section-title"><span>1</span><div><b>المعلومات الأساسية</b><small>الهوية ووسائل التواصل</small></div></div>
@@ -997,24 +1039,43 @@ export default function Home() {
                   <label className="form-field wide"><span>الاسم الثلاثي للمريضة <b>*</b></span><input name="fullName" required value={patientName} onChange={(event) => setPatientName(event.target.value)} placeholder="مثال: زهراء علي خلف" /></label>
                   <label className="form-field"><span>رقم الملف <b>*</b></span><input name="fileNumber" required defaultValue={`P-${1050 + registeredPatients.length}`} dir="ltr" /></label>
                   <label className="form-field"><span>تاريخ الميلاد</span><input name="birthDate" type="date" /></label>
-                  <label className="form-field"><span>الجنس <b>*</b></span><select name="gender" required defaultValue="أنثى"><option>أنثى</option><option>ذكر</option></select></label>
+                  {isBirthCase
+                    ? <div className="form-field implied-field"><span>الجنس</span><p><b>أنثى</b><small>حالة ولادة — الملف للأم، فلا حاجة للسؤال</small></p></div>
+                    : <label className="form-field"><span>الجنس <b>*</b></span><select name="gender" required defaultValue="أنثى"><option>أنثى</option><option>ذكر</option></select></label>}
                   <label className="form-field"><span>رقم الهاتف</span><input name="phone" type="tel" placeholder="07XX XXX XXXX" dir="ltr" /></label>
                 </div>
                 <div className="form-section-title"><span>2</span><div><b>بيانات الدخول</b><small>القسم والطبيب وتصنيف الدفع</small></div></div>
                 <div className="registry-fields">
                   <label className="form-field"><span>تاريخ الدخول <b>*</b></span><input name="admissionDate" type="date" required defaultValue="2026-08-11" /></label>
-                  <label className="form-field"><span>نوع الدخول <b>*</b></span><select name="entryType" required value={patientEntryType} onChange={(event) => { setPatientEntryType(event.target.value); setPatientInitialPrice(getInitialPrice(event.target.value)); if (!event.target.value.includes("ولادة") && !event.target.value.includes("قيصرية")) setNewbornCount(0); }}><option>استشارية</option><option>رقود</option><option>ولادة طبيعية</option><option>عملية قيصرية</option></select></label>
+                  <label className="form-field"><span>نوع الدخول <b>*</b></span><select name="entryType" required value={patientEntryType} onChange={(event) => { setPatientEntryType(event.target.value); setPatientInitialPrice(getInitialPrice(event.target.value)); if (!isBirthEntry(event.target.value)) setNewbornCount(0); }}><option>استشارية</option><option>رقود</option><option>ولادة طبيعية</option><option>عملية قيصرية</option></select></label>
                   <label className="form-field"><span>{patientEntryType === "رقود" ? "تسعيرة يوم الرقود" : "التسعيرة الأولية"} (د.ع)</span><input name="initialPrice" type="number" min="0" step="1000" value={patientInitialPrice} onChange={(event) => setPatientInitialPrice(Number(event.target.value))} /></label>
                   <label className="form-field"><span>القسم الطبي <b>*</b></span><select name="department" required defaultValue=""><option value="" disabled>اختر القسم</option><option>النسائية والتوليد</option><option>الجراحة العامة</option><option>الطب الباطني</option><option>طب الأطفال</option><option>الطوارئ</option><option>العناية المركزة</option></select></label>
                   <label className="form-field"><span>الطبيب المسؤول</span><select name="attendingDoctor" defaultValue=""><option value="">يُحدد لاحقًا</option><option>د. شهد</option><option>د. تبارك</option><option>د. فنار</option></select></label>
                   <label className="form-field"><span>تصنيف الدفع <b>*</b></span><select name="paymentCategory" required defaultValue="نقدي"><option>نقدي</option><option>مجاني</option><option>تأمين</option><option>آجل</option></select></label>
-                  {(patientEntryType === "ولادة طبيعية" || patientEntryType === "عملية قيصرية") && <label className="form-field"><span>عدد المواليد</span><select name="newbornCount" value={newbornCount} onChange={(event) => setNewbornCount(Number(event.target.value))}><option value="0">يُسجل لاحقًا</option><option value="1">مولود واحد</option><option value="2">توأم</option><option value="3">ثلاثة توائم</option><option value="4">أربعة توائم</option></select></label>}
+                  {isBirthCase && <label className="form-field"><span>عدد المواليد</span><div className="newborn-count-field"><select value={newbornCount <= 4 ? newbornCount : "custom"} onChange={(event) => setNewbornCount(event.target.value === "custom" ? 5 : Number(event.target.value))}><option value="0">يُسجل لاحقًا</option><option value="1">مولود واحد</option><option value="2">توأم</option><option value="3">ثلاثة توائم</option><option value="4">أربعة توائم</option><option value="custom">عدد آخر (حالة نادرة)</option></select>{newbornCount > 4 && <input type="number" min="5" max={MAX_NEWBORNS} value={newbornCount} onChange={(event) => setNewbornCount(Math.min(MAX_NEWBORNS, Math.max(5, Number(event.target.value) || 5)))} aria-label="عدد المواليد" />}</div><input type="hidden" name="newbornCount" value={newbornCount} /></label>}
                   <label className="form-field full"><span>ملاحظات أولية</span><textarea name="notes" rows={3} placeholder="الحالة عند الدخول أو أي معلومات مهمة للكادر..." /></label>
                 </div>
-                {(patientEntryType === "ولادة طبيعية" || patientEntryType === "عملية قيصرية") && <div className="pricing-rule-note"><span>↻</span><p><b>قاعدة منع الازدواجية مفعّلة</b><small>إذا تحولت الحالة إلى رقود، يُبطل النظام تسعيرة الولادة ويحفظ سبب الإلغاء، ثم يبدأ التسعير التراكمي للرقود.</small></p></div>}
+                {isBirthCase && <div className="pricing-rule-note"><span>↻</span><p><b>قاعدة منع الازدواجية مفعّلة</b><small>إذا تحولت الحالة إلى رقود، يُبطل النظام تسعيرة الولادة ويحفظ سبب الإلغاء، ثم يبدأ التسعير التراكمي للرقود.</small></p></div>}
                 {newbornNames.length > 0 && <div className="newborn-preview"><div><span>♙</span><p><b>السجلات التي سيُنشئها النظام</b><small>مرتبطة تلقائيًا بملف الأم ومنفصلة طبيًا وماليًا</small></p></div><ul>{newbornNames.map((name, index) => <li key={name}><i>{index + 1}</i>{name}<StatusPill tone="approved">مولود جديد</StatusPill></li>)}</ul></div>}
                 <div className="registry-submit"><p><span>✓</span><small>سيظهر المريض مباشرة في البحث وحالات الدفع بعد التسجيل.</small></p><button className="primary-action" disabled={registrySaving}>{registrySaving ? "جارٍ الحفظ..." : "حفظ ملف المريض"}<span>←</span></button></div>
               </form>
+              <form className="registry-form readmission-form" onSubmit={submitReadmission}>
+                <div className="registry-form-head"><div><span>♙</span><p><b>عودة مولود بعد الخروج</b><small>يُفتح ملفه الأصلي المرتبط بأمه — بلا تسجيل مكرر</small></p></div><StatusPill tone={readmissionCandidates.length ? "pending" : "approved"}>{readmissionCandidates.length ? `${readmissionCandidates.length} مولود خارج المستشفى` : "لا مواليد خارج المستشفى"}</StatusPill></div>
+                {readmissionCandidates.length === 0 ? (
+                  <p className="empty-hint">لا يوجد حاليًا مولود مسجّل خروجه. يظهر هنا تلقائيًا كل مولود غادر المستشفى، ليعاد فتح ملفه عند عودته.</p>
+                ) : (
+                  <>
+                    <div className="registry-fields">
+                      <label className="form-field"><span>ملف الأم <b>*</b></span><select required value={readmissionMotherId} onChange={(event) => { setReadmissionMotherId(Number(event.target.value)); setReadmissionNewbornId(0); }}><option value={0} disabled>اختر الأم</option>{readmissionMothers.map((row) => <option key={row.motherId} value={row.motherId}>{row.motherName} · {row.motherFileNumber}</option>)}</select></label>
+                      <label className="form-field"><span>المولود العائد <b>*</b></span><select required value={readmissionNewbornId} disabled={!readmissionMotherId} onChange={(event) => setReadmissionNewbornId(Number(event.target.value))}><option value={0} disabled>{readmissionMotherId ? "اختر المولود" : "اختر الأم أولًا"}</option>{readmissionNewborns.map((row) => <option key={row.newbornId} value={row.newbornId}>{row.newbornName}{row.twinOrder ? ` (${row.twinOrder})` : ""} · {row.newbornFileNumber}</option>)}</select></label>
+                      <label className="form-field"><span>القسم المستقبِل <b>*</b></span><select name="department" required defaultValue="حديثو الولادة"><option>حديثو الولادة</option><option>طب الأطفال</option><option>العناية المركزة</option><option>الطوارئ</option></select></label>
+                      <label className="form-field full"><span>سبب العودة</span><textarea name="notes" rows={2} placeholder="يرقان، صعوبة رضاعة، حرارة..." /></label>
+                    </div>
+                    <div className="registry-submit"><p><span>↻</span><small>لن يُنشأ ملف جديد — يُعاد فتح السجل نفسه وتُسجَّل العودة في تاريخه المالي والطبي.</small></p><button className="primary-action" disabled={readmissionSaving || !readmissionNewbornId}>{readmissionSaving ? "جارٍ التسجيل..." : "تسجيل عودة المولود"}<span>←</span></button></div>
+                  </>
+                )}
+              </form>
+              </>
             ) : (
               <form className="registry-form" onSubmit={(event) => submitRegistry(event, "employee")}>
                 <div className="registry-form-head"><div><span>✦</span><p><b>بيانات الموظف</b><small>أنشئ الحساب وحدد الدور والاختصاص</small></p></div><StatusPill tone="approved">حساب جديد</StatusPill></div>

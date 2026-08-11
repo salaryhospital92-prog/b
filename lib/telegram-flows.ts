@@ -20,6 +20,8 @@ export type FlowStep = {
   /** A choice step that also accepts a typed answer (e.g. a custom file number). */
   allowText?: boolean;
   optional?: boolean;
+  /** Skip this step when the answers so far make it meaningless (a birth is always female). */
+  when?: (context: FlowContext) => boolean;
 };
 
 export type Flow = {
@@ -45,11 +47,36 @@ export type FlowInput =
   | { kind: "done" }
   | { kind: "cancel" };
 
+function isVisible(step: FlowStep, context: FlowContext) {
+  return !step.when || step.when(context);
+}
+
+/** First step at or after `from` that the collected answers still call for. */
+function nextVisibleIndex(flow: Flow, from: number, context: FlowContext) {
+  for (let index = from; index < flow.steps.length; index += 1) {
+    if (isVisible(flow.steps[index], context)) return index;
+  }
+  return -1;
+}
+
+/** Numbering counts only the steps this run will actually ask. */
+function visiblePosition(flow: Flow, stepIndex: number, context: FlowContext) {
+  let total = 0;
+  let position = 0;
+  for (let index = 0; index < flow.steps.length; index += 1) {
+    if (!isVisible(flow.steps[index], context)) continue;
+    total += 1;
+    if (index === stepIndex) position = total;
+  }
+  return { position, total };
+}
+
 async function renderStep(flow: Flow, stepIndex: number, context: FlowContext) {
   const step = flow.steps[stepIndex];
   const options = step.options ? await step.options(context) : [];
   const selected = Array.isArray(context.data[step.key]) ? (context.data[step.key] as string[]) : [];
-  const header = `${flow.title} — خطوة ${stepIndex + 1} من ${flow.steps.length}`;
+  const { position, total } = visiblePosition(flow, stepIndex, context);
+  const header = `${flow.title} — خطوة ${position} من ${total}`;
   return {
     options,
     reply: {
@@ -176,8 +203,8 @@ async function advance(
   session: FlowSession,
   context: FlowContext,
 ): Promise<FlowReply> {
-  const nextStep = session.step + 1;
-  if (nextStep >= flow.steps.length) {
+  const nextStep = nextVisibleIndex(flow, session.step + 1, context);
+  if (nextStep < 0) {
     await clearSession(chatId);
     return { text: await flow.finish(context), finished: true };
   }

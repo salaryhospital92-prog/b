@@ -5,6 +5,23 @@ export const PROCEDURE_PRICES = {
   "استشارية": 10000,
 } as const;
 
+/** Upper bound on a single birth; anything higher is a data-entry slip, not a delivery. */
+export const MAX_NEWBORNS = 10;
+
+/** Birth cases are recorded on the mother's file, so the patient is always female. */
+export function isBirthEntry(entryType: string) {
+  return entryType === "ولادة طبيعية" || entryType === "عملية قيصرية";
+}
+
+/** Accepts the preset counts and a hand-typed one for rare births. Null means invalid. */
+export function parseNewbornCount(value: unknown): number | null {
+  const digits = String(value ?? "").trim().replace(/[٠-٩]/g, (digit) => String("٠١٢٣٤٥٦٧٨٩".indexOf(digit)));
+  if (!digits) return 0;
+  if (!/^\d+$/.test(digits)) return null;
+  const count = Number(digits);
+  return count > MAX_NEWBORNS ? null : count;
+}
+
 export function buildNewbornNames(motherName: string, newbornCount: number) {
   const name = motherName.trim();
   if (!name || newbornCount <= 0) return [];
