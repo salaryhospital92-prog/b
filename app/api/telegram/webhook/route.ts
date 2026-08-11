@@ -6,6 +6,7 @@ import {
   MAIN_MENU_LABEL,
   answerTelegramCallback,
   downloadTelegramFile,
+  editTelegramMessage,
   sendTelegramMessage,
   telegramCommandMenu,
   telegramContactVerificationKeyboard,
@@ -41,7 +42,7 @@ type TelegramMessage = {
 type TelegramCallbackQuery = { id: string; from: TelegramUser; message?: TelegramMessage; data?: string };
 type TelegramUpdate = { update_id: number; message?: TelegramMessage; callback_query?: TelegramCallbackQuery };
 type LinkedEmployee = { accountId: number; employeeId: number; fullName: string; role: string; specialty: string; isBotAdmin: boolean };
-type CommandResult = { text: string; employeeId?: number; isBotAdmin?: boolean; role?: string; replyMarkup?: TelegramReplyMarkup };
+type CommandResult = { text: string; employeeId?: number; isBotAdmin?: boolean; role?: string; replyMarkup?: TelegramReplyMarkup; edit?: boolean };
 type AttachedFile = { fileId: string; fileName: string; mimeType: string; declaredSize: number };
 
 const MANAGEMENT_ROLES = new Set(["رئيس المقيمين", "الإدارة العليا", "مطور النظام"]);
@@ -794,7 +795,7 @@ async function finishAvailability(employee: LinkedEmployee, context: FlowContext
   ].join("\n");
 }
 
-async function rosterSummary(employee: LinkedEmployee) {
+async function rosterSummary() {
   const target = nextMonthKey();
   const supabase = getSupabaseAdmin();
   const { data: month } = await supabase.from("shift_months").select("id,status,morning_start,evening_start").eq("month", target.key).maybeSingle();
@@ -1031,7 +1032,7 @@ async function executeCommand(employee: LinkedEmployee, chatId: number, telegram
 
   if (commandName === "roster") {
     if (!allows(employee, MANAGEMENT_ROLES)) return menuResult(employee, "ملخص الجدول متاح للإدارة ورئيس المقيمين.");
-    return menuResult(employee, await rosterSummary(employee));
+    return menuResult(employee, await rosterSummary());
   }
   if (commandName === "adminrequests") return botAdminRequests(employee);
   let text: string;
@@ -1064,6 +1065,7 @@ async function routeFlowInput(employee: LinkedEmployee, chatId: number, telegram
     isBotAdmin: employee.isBotAdmin,
     role: employee.role,
     replyMarkup: reply.finished ? telegramCommandMenu(employee.isBotAdmin, employee.role) : reply.replyMarkup,
+    edit: reply.edit,
   };
 }
 
@@ -1164,7 +1166,13 @@ export async function POST(request: Request) {
     }
 
     const result = update.callback_query ? await processCallback(update.callback_query) : await processMessage(message);
-    await sendTelegramMessage(message.chat.id, result.text, result.replyMarkup || telegramMainKeyboard());
+    // A tick on a multi-select rewrites the message it came from; everything
+    // else posts a new one.
+    if (result.edit && update.callback_query?.message?.message_id) {
+      await editTelegramMessage(message.chat.id, update.callback_query.message.message_id, result.text, result.replyMarkup);
+    } else {
+      await sendTelegramMessage(message.chat.id, result.text, result.replyMarkup || telegramMainKeyboard());
+    }
     if (update.callback_query) await answerTelegramCallback(update.callback_query.id);
     const { error: processedError } = await supabase.from("telegram_updates").update({
       employee_id: result.employeeId || null,

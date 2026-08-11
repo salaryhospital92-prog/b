@@ -37,7 +37,7 @@ export type FlowSession = {
   options: FlowOption[];
 };
 
-export type FlowReply = { text: string; replyMarkup?: TelegramReplyMarkup; finished?: boolean };
+export type FlowReply = { text: string; replyMarkup?: TelegramReplyMarkup; finished?: boolean; edit?: boolean };
 
 export type FlowInput =
   | { kind: "index"; index: number }
@@ -158,7 +158,9 @@ export async function applyFlowInput(
   if (input.kind === "done") {
     if (step.kind !== "multi") return null;
     const selected = Array.isArray(session.data[step.key]) ? (session.data[step.key] as string[]) : [];
-    if (!selected.length) return { text: "اختر عنصرًا واحدًا على الأقل قبل المتابعة.", replyMarkup: stepKeyboard(step, session.options, selected) };
+    if (!selected.length) return { text: `${flow.title}
+
+اختر عنصرًا واحدًا على الأقل قبل المتابعة.`, replyMarkup: stepKeyboard(step, session.options, selected), edit: true };
     return advance(chatId, telegramUserId, flow, session, context);
   }
 
@@ -177,7 +179,13 @@ export async function applyFlowInput(
       const next = selected.includes(option.value) ? selected.filter((value) => value !== option.value) : [...selected, option.value];
       session.data[step.key] = next;
       await saveSession(chatId, telegramUserId, context, session);
-      return { text: `${flow.title} — خطوة ${session.step + 1} من ${flow.steps.length}\n\n${step.prompt}${stepHint(step)}`, replyMarkup: stepKeyboard(step, session.options, next) };
+      const { position, total } = visiblePosition(flow, session.step, context);
+      // Redraw the same message: ticking items must not fill the chat with copies.
+      return {
+        text: `${flow.title} — خطوة ${position} من ${total}\n\n${step.prompt}\nالمحدد: ${next.length}${stepHint(step)}`,
+        replyMarkup: stepKeyboard(step, session.options, next),
+        edit: true,
+      };
     }
     session.data[step.key] = option.value;
     return advance(chatId, telegramUserId, flow, session, context);

@@ -78,6 +78,25 @@ export async function sendTelegramMessage(chatId: number, text: string, replyMar
 }
 
 /**
+ * Rewrites a message in place. Used while ticking items off a list, so the
+ * chat keeps one live keyboard instead of a new copy per tap.
+ */
+export async function editTelegramMessage(chatId: number, messageId: number, text: string, replyMarkup?: TelegramReplyMarkup) {
+  try {
+    return await telegramRequest("editMessageText", {
+      chat_id: chatId,
+      message_id: messageId,
+      text,
+      ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
+    });
+  } catch (error) {
+    // Telegram rejects an edit that changes nothing; that is not a failure.
+    if (error instanceof Error && /not modified/i.test(error.message)) return null;
+    throw error;
+  }
+}
+
+/**
  * Sends the app icon with the caption, so an invite or a share carries the
  * same square icon people see on their home screen.
  */

@@ -42,3 +42,23 @@ test("optional steps offer skip, required steps do not", () => {
   assert.ok(optional.some((text) => text.includes("تخطي")));
   assert.ok(!required.some((text) => text.includes("تخطي")));
 });
+
+const flows = await import("node:fs/promises").then((fs) =>
+  fs.readFile(new URL("../lib/telegram-flows.ts", import.meta.url), "utf8"));
+const webhook = await import("node:fs/promises").then((fs) =>
+  fs.readFile(new URL("../app/api/telegram/webhook/route.ts", import.meta.url), "utf8"));
+const buttons = await import("node:fs/promises").then((fs) =>
+  fs.readFile(new URL("../lib/telegram-buttons.ts", import.meta.url), "utf8"));
+
+test("ticking an item redraws its message instead of posting another", () => {
+  // Selecting five days used to leave five copies of the list in the chat.
+  const toggle = flows.slice(flows.indexOf('if (step.kind === "multi") {'), flows.indexOf('session.data[step.key] = option.value;'));
+  assert.match(toggle, /edit: true/, "a multi-select tick must edit, not send");
+  assert.match(webhook, /editTelegramMessage\(message\.chat\.id, update\.callback_query\.message\.message_id/);
+});
+
+test("the running count is visible while choosing", () => {
+  // Both in the message body and on the confirm button.
+  assert.match(flows, /المحدد: \$\{next\.length\}/);
+  assert.match(buttons, /تم الاختيار \(\$\{selected\.length\}\)/);
+});
