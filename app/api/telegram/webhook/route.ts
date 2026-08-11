@@ -1,11 +1,20 @@
 import { getBillingMode, getInitialPrice } from "../../../../lib/rules-engine";
 import { getSupabaseAdmin, readRuntimeVariable } from "../../../../lib/supabase-server";
-import { downloadTelegramFile, sendTelegramMessage, telegramMainKeyboard } from "../../../../lib/telegram";
+import {
+  answerTelegramCallback,
+  downloadTelegramFile,
+  sendTelegramMessage,
+  telegramCommandMenu,
+  telegramContactVerificationKeyboard,
+  telegramMainKeyboard,
+  type TelegramReplyMarkup,
+} from "../../../../lib/telegram";
 
 type Row = Record<string, unknown>;
 type TelegramUser = { id: number; username?: string; first_name?: string; last_name?: string };
 type TelegramDocument = { file_id: string; file_name?: string; mime_type?: string; file_size?: number };
 type TelegramPhoto = { file_id: string; file_size?: number; width: number; height: number };
+type TelegramContact = { phone_number: string; first_name: string; last_name?: string; user_id?: number };
 type TelegramMessage = {
   message_id: number;
   chat: { id: number; type: string };
@@ -14,10 +23,12 @@ type TelegramMessage = {
   caption?: string;
   document?: TelegramDocument;
   photo?: TelegramPhoto[];
+  contact?: TelegramContact;
 };
-type TelegramUpdate = { update_id: number; message?: TelegramMessage };
-type LinkedEmployee = { accountId: number; employeeId: number; fullName: string; role: string; specialty: string };
-type CommandResult = { text: string; employeeId?: number };
+type TelegramCallbackQuery = { id: string; from: TelegramUser; message?: TelegramMessage; data?: string };
+type TelegramUpdate = { update_id: number; message?: TelegramMessage; callback_query?: TelegramCallbackQuery };
+type LinkedEmployee = { accountId: number; employeeId: number; fullName: string; role: string; specialty: string; isBotAdmin: boolean };
+type CommandResult = { text: string; employeeId?: number; isBotAdmin?: boolean; replyMarkup?: TelegramReplyMarkup };
 
 const MANAGEMENT_ROLES = new Set(["رئيس المقيمين", "الإدارة العليا", "مطور النظام"]);
 const PATIENT_ROLES = new Set(["طبيب مقيم", "رئيس المقيمين", "الحسابات", "الإدارة العليا", "مطور النظام"]);
@@ -58,8 +69,16 @@ function parseCommand(rawText: string) {
     "حالتي": "status",
     "من موجود الآن": "present",
     "مساعدة": "help",
+    "قائمة الأوامر": "menu",
+    "إضافة مهمة": "task",
+    "متابعة مهمة": "followup",
+    "إنهاء مهمة": "done",
     "إضافة مريض": "patient",
+    "تسجيل مريض": "patient",
     "تسليم مناوبة": "handover",
+    "إرفاق ملف": "attach",
+    "طلبات مديري البوت": "adminrequests",
+    "إلغاء": "menu",
   };
   if (natural[text]) return { name: natural[text], args: "" };
   const [head = "", ...tail] = text.split(/\s+/);
@@ -71,6 +90,7 @@ function helpText() {
   return [
     "بوت البياتي — الأوامر المتاحة",
     "",
+    "/menu — عرض قائمة الأزرار التفاعلية",
     "/checkin ملاحظة — تسجيل الحضور",
     "/checkout ملاحظة — تسجيل الانصراف",
     "/status — حالتي وآخر نشاط",
@@ -82,6 +102,7 @@ function helpText() {
     "/patient الاسم | رقم الملف | الجنس | القسم | نوع الدخول | الطبيب — تسجيل مريض",
     "/handover الطبيب المستلم | P-1001,P-1002 | ملاحظة — تسليم مرضى",
     "/attach patient | P-1001 | تحاليل — أرسلها كتعليق على صورة أو PDF",
+    "/adminrequests — طلبات إدارة البوت (لمديري البوت فقط)",
     "",
     "كل عملية تُحفظ في قاعدة البياتي نفسها مع اسم المنفذ والوقت والمصدر.",
   ].join("\n");
@@ -89,7 +110,7 @@ function helpText() {
 
 async function linkedEmployee(chatId: number, telegramUserId: number): Promise<LinkedEmployee | null> {
   const supabase = getSupabaseAdmin();
-  const { data: account, error } = await supabase.from("telegram_accounts").select("id,employee_id,status")
+  const { data: account, error } = await supabase.from("telegram_accounts").select("id,employee_id,status,is_bot_admin")
     .eq("chat_id", chatId).eq("telegram_user_id", telegramUserId).maybeSingle();
   if (error) throw error;
   if (!account || account.status !== "معتمد") return null;
@@ -104,6 +125,7 @@ async function linkedEmployee(chatId: number, telegramUserId: number): Promise<L
     fullName: String(employee.full_name),
     role: String(employee.role),
     specialty: String(employee.specialty),
+    isBotAdmin: Boolean(account.is_bot_admin),
   };
 }
 
@@ -144,6 +166,7 @@ async function pairAccount(message: TelegramMessage, code: string): Promise<Comm
     username: message.from.username || null,
     display_name: displayName || null,
     status: "معتمد",
+    is_bot_admin: false,
   });
   if (insertError) throw insertError;
   await supabase.from("telegram_link_codes").update({ used_at: new Date().toISOString() }).eq("id", link.id);
@@ -157,12 +180,189 @@ async function pairAccount(message: TelegramMessage, code: string): Promise<Comm
     fullName: String(employee.full_name),
     role: String(employee.role),
     specialty: "",
+    isBotAdmin: false,
   };
   await recordActivity(linked, "ربط Telegram", "ربط حسابه ببوت البياتي", "telegram_account", String(link.employee_id));
   return {
     text: `تم الربط بنجاح يا ${employee.full_name}.\nصلاحيتك: ${employee.role}\nيمكنك الآن تنفيذ مهامك من بوت البياتي.`,
     employeeId: Number(link.employee_id),
+    isBotAdmin: false,
   };
+}
+
+function normalizePhoneNumber(value: string) {
+  let digits = value.replace(/[^0-9]/g, "");
+  if (digits.startsWith("00")) digits = digits.slice(2);
+  if (digits.startsWith("0")) digits = `964${digits.slice(1)}`;
+  if (!digits.startsWith("964")) digits = `964${digits}`;
+  return `+${digits}`;
+}
+
+function telegramDisplayName(user: TelegramUser) {
+  return [user.first_name, user.last_name].filter(Boolean).join(" ").trim() || (user.username ? `@${user.username}` : `Telegram ${user.id}`);
+}
+
+async function registerUnlinkedStart(message: TelegramMessage): Promise<CommandResult> {
+  if (!message.from) return { text: "تعذر تحديد حساب Telegram المرسل." };
+  const supabase = getSupabaseAdmin();
+  const username = message.from.username?.toLowerCase() || "";
+  if (username) {
+    const { data: allowed, error } = await supabase.from("telegram_bot_admin_allowlist").select("status")
+      .ilike("telegram_username", username).maybeSingle();
+    if (error) throw error;
+    if (allowed && allowed.status !== "ملغى") {
+      return {
+        text: "تم التعرف على حساب د. مصطفى. لإكمال صلاحية مدير البوت بأمان اضغط الزر وشارك رقمك المسجل. لا يُحفظ أي رقم جديد غير الرقم المعتمد في النظام.",
+        replyMarkup: telegramContactVerificationKeyboard(),
+      };
+    }
+  }
+
+  const { data: existing, error: existingError } = await supabase.from("telegram_bot_admin_requests").select("id,status")
+    .eq("telegram_user_id", message.from.id).maybeSingle();
+  if (existingError) throw existingError;
+  if (!existing) {
+    const { error } = await supabase.from("telegram_bot_admin_requests").insert({
+      telegram_user_id: message.from.id,
+      chat_id: message.chat.id,
+      username: message.from.username || null,
+      display_name: telegramDisplayName(message.from),
+      status: "بانتظار الموافقة",
+    });
+    if (error) throw error;
+  } else if (existing.status === "مرفوض") {
+    return { text: "طلب إدارة البوت لهذا الحساب مرفوض. راجع مدير البوت أو إدارة المستشفى." };
+  }
+  return { text: "تم تسجيل الحساب الذي أرسل Start كطلب إدارة معلّق. سيظهر لد. مصطفى ليوافق عليه من زر «طلبات مديري البوت»." };
+}
+
+async function verifyBootstrapAdmin(message: TelegramMessage): Promise<CommandResult> {
+  if (!message.from || !message.contact) return { text: "لم تصل جهة اتصال صالحة للتحقق." };
+  if (message.contact.user_id && message.contact.user_id !== message.from.id) {
+    return { text: "يجب مشاركة رقم حسابك أنت، وليس جهة اتصال لشخص آخر." };
+  }
+  const username = message.from.username?.toLowerCase() || "";
+  if (!username) return { text: "يجب أن يكون اسم مستخدم Telegram المعتمد ظاهرًا على الحساب." };
+  const supabase = getSupabaseAdmin();
+  const { data: allowed, error } = await supabase.from("telegram_bot_admin_allowlist").select("id,employee_id,phone_number,status")
+    .ilike("telegram_username", username).maybeSingle();
+  if (error) throw error;
+  if (!allowed || allowed.status === "ملغى") return { text: "هذا الحساب غير موجود ضمن قائمة مديري بوت البياتي." };
+  if (normalizePhoneNumber(message.contact.phone_number) !== normalizePhoneNumber(String(allowed.phone_number))) {
+    return { text: "الرقم المشارك لا يطابق الرقم المعتمد لمدير البوت." };
+  }
+
+  await supabase.from("telegram_accounts").delete().eq("employee_id", allowed.employee_id);
+  await supabase.from("telegram_accounts").delete().eq("telegram_user_id", message.from.id);
+  const { data: account, error: accountError } = await supabase.from("telegram_accounts").insert({
+    employee_id: allowed.employee_id,
+    telegram_user_id: message.from.id,
+    chat_id: message.chat.id,
+    username: message.from.username || null,
+    display_name: telegramDisplayName(message.from),
+    status: "معتمد",
+    is_bot_admin: true,
+  }).select("id").single();
+  if (accountError) throw accountError;
+  const { error: allowlistError } = await supabase.from("telegram_bot_admin_allowlist").update({
+    status: "تم التحقق",
+    telegram_user_id: message.from.id,
+    verified_at: new Date().toISOString(),
+  }).eq("id", allowed.id);
+  if (allowlistError) throw allowlistError;
+  await supabase.from("telegram_bot_admin_requests").update({
+    status: "مقبول",
+    reviewed_by: allowed.employee_id,
+    reviewed_at: new Date().toISOString(),
+  }).eq("telegram_user_id", message.from.id);
+
+  const { data: employee, error: employeeError } = await supabase.from("employees").select("full_name,role,specialty").eq("id", allowed.employee_id).single();
+  if (employeeError) throw employeeError;
+  const linked: LinkedEmployee = {
+    accountId: Number(account.id),
+    employeeId: Number(allowed.employee_id),
+    fullName: String(employee.full_name),
+    role: String(employee.role),
+    specialty: String(employee.specialty),
+    isBotAdmin: true,
+  };
+  await recordActivity(linked, "اعتماد مدير البوت", "تحقق من اسم Telegram ورقم الهاتف وأصبح مديرًا لبوت البياتي", "telegram_account", account.id);
+  return {
+    text: `تم التحقق بنجاح يا ${linked.fullName}. أصبحت الآن مديرًا لبوت البياتي ويمكنك الموافقة على حساب Start المعلّق.`,
+    employeeId: linked.employeeId,
+    isBotAdmin: true,
+    replyMarkup: telegramCommandMenu(true),
+  };
+}
+
+async function botAdminRequests(employee: LinkedEmployee): Promise<CommandResult> {
+  if (!employee.isBotAdmin) return { text: "هذه القائمة مخصصة لمديري البوت المعتمدين فقط.", employeeId: employee.employeeId };
+  const { data, error } = await getSupabaseAdmin().from("telegram_bot_admin_requests").select("id,username,display_name,requested_at")
+    .eq("status", "بانتظار الموافقة").order("requested_at", { ascending: true }).limit(20);
+  if (error) throw error;
+  if (!data?.length) return { text: "لا توجد طلبات إدارة بوت معلّقة الآن.", employeeId: employee.employeeId, isBotAdmin: true };
+  const rows = data.flatMap((request) => [[
+    { text: `اعتماد ${request.username ? `@${request.username}` : request.display_name}`, callback_data: `adminapprove:${request.id}` },
+    { text: "رفض", callback_data: `adminreject:${request.id}` },
+  ]]);
+  return {
+    text: ["طلبات إدارة البوت المعلقة:", ...data.map((request) => `#${request.id} · ${request.display_name}${request.username ? ` · @${request.username}` : ""}`)].join("\n"),
+    employeeId: employee.employeeId,
+    isBotAdmin: true,
+    replyMarkup: { inline_keyboard: rows },
+  };
+}
+
+async function reviewBotAdminRequest(employee: LinkedEmployee, requestIdText: string, decision: "مقبول" | "مرفوض") {
+  if (!employee.isBotAdmin) return "هذه العملية مخصصة لمديري البوت المعتمدين فقط.";
+  const requestId = Number(requestIdText);
+  if (!Number.isInteger(requestId) || requestId <= 0) return "معرّف الطلب غير صحيح.";
+  const supabase = getSupabaseAdmin();
+  const { data: request, error } = await supabase.from("telegram_bot_admin_requests").select("*")
+    .eq("id", requestId).eq("status", "بانتظار الموافقة").maybeSingle();
+  if (error) throw error;
+  if (!request) return "الطلب غير موجود أو تمت مراجعته مسبقًا.";
+  if (decision === "مرفوض") {
+    const { error: rejectError } = await supabase.from("telegram_bot_admin_requests").update({
+      status: "مرفوض", reviewed_by: employee.employeeId, reviewed_at: new Date().toISOString(),
+    }).eq("id", requestId);
+    if (rejectError) throw rejectError;
+    await sendTelegramMessage(Number(request.chat_id), "تم رفض طلب إدارة بوت البياتي. راجع إدارة المستشفى إذا كان ذلك غير صحيح.");
+    await recordActivity(employee, "رفض مدير بوت", `رفض طلب إدارة البوت #${requestId}`, "telegram_admin_request", requestId);
+    return `تم رفض الطلب #${requestId}.`;
+  }
+
+  const employeeNumber = `BOT-REQUEST-${requestId}`;
+  const { data: approvedEmployee, error: employeeError } = await supabase.from("employees").upsert({
+    full_name: request.display_name || (request.username ? `@${request.username}` : `مدير بوت ${requestId}`),
+    employee_number: employeeNumber,
+    username: `telegram.bot.admin.${request.telegram_user_id}`,
+    role: "مدير بوت",
+    specialty: "إدارة بوت البياتي",
+    join_date: baghdadDate(),
+    status: "نشط",
+    approval_status: "معتمد",
+  }, { onConflict: "employee_number" }).select("id,full_name").single();
+  if (employeeError) throw employeeError;
+  await supabase.from("telegram_accounts").delete().eq("telegram_user_id", request.telegram_user_id);
+  await supabase.from("telegram_accounts").delete().eq("employee_id", approvedEmployee.id);
+  const { error: accountError } = await supabase.from("telegram_accounts").insert({
+    employee_id: approvedEmployee.id,
+    telegram_user_id: request.telegram_user_id,
+    chat_id: request.chat_id,
+    username: request.username,
+    display_name: request.display_name,
+    status: "معتمد",
+    is_bot_admin: true,
+  });
+  if (accountError) throw accountError;
+  const { error: approveError } = await supabase.from("telegram_bot_admin_requests").update({
+    status: "مقبول", reviewed_by: employee.employeeId, reviewed_at: new Date().toISOString(),
+  }).eq("id", requestId);
+  if (approveError) throw approveError;
+  await sendTelegramMessage(Number(request.chat_id), "تمت الموافقة عليك كمدير لبوت البياتي. افتح قائمة الأوامر للبدء.", telegramMainKeyboard(true));
+  await recordActivity(employee, "اعتماد مدير بوت", `اعتمد ${approvedEmployee.full_name} مديرًا لبوت البياتي`, "telegram_admin_request", requestId);
+  return `تم اعتماد ${approvedEmployee.full_name} مديرًا للبوت.`;
 }
 
 async function attendance(employee: LinkedEmployee, action: "دخول" | "خروج", note: string) {
@@ -182,7 +382,7 @@ async function attendance(employee: LinkedEmployee, action: "دخول" | "خرو
 }
 
 async function presenceList(employee: LinkedEmployee) {
-  if (!MANAGEMENT_ROLES.has(employee.role)) return "قائمة الموجودين الآن متاحة للإدارة العليا ورئيس المقيمين فقط.";
+  if (!MANAGEMENT_ROLES.has(employee.role) && !employee.isBotAdmin) return "قائمة الموجودين الآن متاحة للإدارة العليا ورئيس المقيمين فقط.";
   const { data, error } = await getSupabaseAdmin().from("employee_presence_overview").select("full_name,role,clock_in_at,last_activity,last_activity_at")
     .eq("is_present", true).order("clock_in_at", { ascending: true });
   if (error) throw error;
@@ -399,22 +599,14 @@ async function attachFile(employee: LinkedEmployee, message: TelegramMessage, ar
   return `تم حفظ الملف ضمن ${category} وربطه بالسجل بنجاح.`;
 }
 
-async function processMessage(message: TelegramMessage): Promise<CommandResult> {
-  const rawText = message.text || message.caption || "";
-  const command = parseCommand(rawText);
-  if (["start", "link"].includes(command.name) && command.args) {
-    return pairAccount(message, command.args);
-  }
-  if (["start", "link"].includes(command.name) && !command.args) {
-    if (!message.from) return { text: "تعذر تحديد حساب Telegram المرسل." };
-    const existing = await linkedEmployee(message.chat.id, message.from.id);
-    if (existing) return { text: `مرحبًا ${existing.fullName}.\nأنت مرتبط بنظام البياتي بصلاحية ${existing.role}.\n\n${helpText()}`, employeeId: existing.employeeId };
-    return { text: "مرحبًا بك في بوت البياتي. اطلب من الإدارة رمز ربط مؤقتًا ثم أرسل: /link 123456" };
-  }
-  if (!message.from) return { text: "تعذر تحديد حساب Telegram المرسل." };
-  const employee = await linkedEmployee(message.chat.id, message.from.id);
-  if (!employee) return { text: "هذا الحساب غير مربوط بالنظام. اطلب من الإدارة رمزًا مؤقتًا ثم أرسل: /link 123456" };
-
+async function executeCommand(employee: LinkedEmployee, message: TelegramMessage, command: { name: string; args: string }): Promise<CommandResult> {
+  if (command.name === "menu") return {
+    text: "اختر العملية المطلوبة من الأزرار:",
+    employeeId: employee.employeeId,
+    isBotAdmin: employee.isBotAdmin,
+    replyMarkup: telegramCommandMenu(employee.isBotAdmin),
+  };
+  if (command.name === "adminrequests") return botAdminRequests(employee);
   let text: string;
   if (command.name === "checkin") text = await attendance(employee, "دخول", command.args);
   else if (command.name === "checkout") text = await attendance(employee, "خروج", command.args);
@@ -427,9 +619,42 @@ async function processMessage(message: TelegramMessage): Promise<CommandResult> 
   else if (command.name === "patient") text = await registerPatient(employee, command.args);
   else if (command.name === "handover") text = await createHandover(employee, command.args);
   else if (command.name === "attach") text = await attachFile(employee, message, command.args);
+  else if (command.name === "adminapprove") text = await reviewBotAdminRequest(employee, command.args, "مقبول");
+  else if (command.name === "adminreject") text = await reviewBotAdminRequest(employee, command.args, "مرفوض");
   else if (command.name === "help") text = helpText();
   else text = `لم أفهم الأمر.\n\n${helpText()}`;
-  return { text, employeeId: employee.employeeId };
+  return { text, employeeId: employee.employeeId, isBotAdmin: employee.isBotAdmin };
+}
+
+async function processMessage(message: TelegramMessage): Promise<CommandResult> {
+  if (message.contact) return verifyBootstrapAdmin(message);
+  const rawText = message.text || message.caption || "";
+  const command = parseCommand(rawText);
+  if (["start", "link"].includes(command.name) && command.args) return pairAccount(message, command.args);
+  if (!message.from) return { text: "تعذر تحديد حساب Telegram المرسل." };
+  const employee = await linkedEmployee(message.chat.id, message.from.id);
+  if (["start", "link"].includes(command.name) && !command.args) {
+    if (employee) return {
+      text: `مرحبًا ${employee.fullName}. أنت مرتبط بنظام البياتي بصلاحية ${employee.role}. اختر العملية المطلوبة:`,
+      employeeId: employee.employeeId,
+      isBotAdmin: employee.isBotAdmin,
+      replyMarkup: telegramCommandMenu(employee.isBotAdmin),
+    };
+    return registerUnlinkedStart(message);
+  }
+  if (!employee) return { text: "هذا الحساب غير مربوط بالنظام. أرسل /start لتسجيل طلبك أو استخدم رمز الربط الذي تمنحه الإدارة." };
+  return executeCommand(employee, message, command);
+}
+
+async function processCallback(callback: TelegramCallbackQuery): Promise<CommandResult> {
+  if (!callback.message) return { text: "تعذر تحديد محادثة الزر." };
+  const employee = await linkedEmployee(callback.message.chat.id, callback.from.id);
+  if (!employee) return { text: "هذا الحساب غير مربوط بالنظام. أرسل /start أولًا." };
+  const [scope, action, value = ""] = (callback.data || "").split(":");
+  const command = scope === "menu"
+    ? { name: action || "menu", args: "" }
+    : { name: scope || "menu", args: action || value };
+  return executeCommand(employee, { ...callback.message, from: callback.from }, command);
 }
 
 export async function POST(request: Request) {
@@ -438,10 +663,10 @@ export async function POST(request: Request) {
   try {
     const update = await request.json() as TelegramUpdate;
     updateId = Number(update.update_id);
-    if (!Number.isInteger(updateId) || !update.message) return Response.json({ ok: true });
-    const message = update.message;
+    const message = update.message || update.callback_query?.message;
+    if (!Number.isInteger(updateId) || !message) return Response.json({ ok: true });
     const supabase = getSupabaseAdmin();
-    const command = parseCommand(message.text || message.caption || "").name;
+    const command = update.callback_query?.data || parseCommand(message.text || message.caption || "").name;
     const { data: existing, error: lookupError } = await supabase.from("telegram_updates").select("status")
       .eq("update_id", updateId).maybeSingle();
     if (lookupError) throw lookupError;
@@ -459,8 +684,9 @@ export async function POST(request: Request) {
       await supabase.from("telegram_updates").update({ status: "مستلم", error_message: null }).eq("update_id", updateId);
     }
 
-    const result = await processMessage(message);
-    await sendTelegramMessage(message.chat.id, result.text, telegramMainKeyboard());
+    const result = update.callback_query ? await processCallback(update.callback_query) : await processMessage(message);
+    await sendTelegramMessage(message.chat.id, result.text, result.replyMarkup || telegramMainKeyboard(Boolean(result.isBotAdmin)));
+    if (update.callback_query) await answerTelegramCallback(update.callback_query.id);
     const { error: processedError } = await supabase.from("telegram_updates").update({
       employee_id: result.employeeId || null,
       status: "تمت المعالجة",

@@ -46,7 +46,7 @@ type PresenceRecord = { employeeId: number; fullName: string; role: string; spec
 type AttendanceSession = { id: number; employeeId: number; employeeName: string; clockInAt: string; clockOutAt?: string | null; clockInSource: string; clockOutSource?: string | null };
 type OperationalTask = { id: number; title: string; status: string; priority: string; dueAt?: string | null; assigneeName: string };
 type AttendanceData = { summary: { present: number; total: number; arrivalsToday: number; activeLast15Minutes: number; openTasks: number }; presence: PresenceRecord[]; sessions: AttendanceSession[]; tasks: OperationalTask[] };
-type TelegramStatusData = { botUsername: string; configuration: { tokenConfigured: boolean; secretConfigured: boolean; publicUrlConfigured: boolean; webhookReady: boolean }; linkedAccounts: { id: number; employeeId: number; employeeName: string; employeeRole: string; username?: string | null; status: string; pairedAt: string; lastSeenAt: string }[]; recentUpdates: { updateId: number; employeeName?: string | null; command?: string | null; status: string; error?: string | null; receivedAt: string; processedAt?: string | null }[]; openTasks: number };
+type TelegramStatusData = { botUsername: string; configuration: { tokenConfigured: boolean; secretConfigured: boolean; publicUrlConfigured: boolean; webhookReady: boolean }; linkedAccounts: { id: number; employeeId: number; employeeName: string; employeeRole: string; username?: string | null; status: string; isBotAdmin: boolean; pairedAt: string; lastSeenAt: string }[]; recentUpdates: { updateId: number; employeeName?: string | null; command?: string | null; status: string; error?: string | null; receivedAt: string; processedAt?: string | null }[]; openTasks: number; botAdmins: { employeeName: string; username?: string | null; lastSeenAt: string }[]; pendingAdminRequests: { id: number; username?: string | null; displayName?: string | null; requestedAt: string }[]; bootstrapAdmins: { employeeName: string; username: string; status: string; verifiedAt?: string | null }[] };
 type TelegramLink = { code: string; employeeName: string; expiresAt: string; deepLink: string } | null;
 
 const IQD = new Intl.NumberFormat("en-US");
@@ -1159,6 +1159,11 @@ export default function Home() {
           <span className={configuration?.publicUrlConfigured ? "done" : ""}>✓ عنوان HTTPS</span>
           <b>{configuration?.webhookReady ? "جاهز للتشغيل" : "جاهز برمجيًا · غير منشور"}</b>
         </div>
+      </section>
+
+      <section className="bot-admin-grid">
+        <article className="panel bot-admin-card"><div className="panel-head"><div><h2>مدير البوت الأساسي</h2><p>تحقق مزدوج من اسم Telegram والرقم المسجل</p></div><StatusPill tone={telegramStatus?.bootstrapAdmins[0]?.status === "تم التحقق" ? "approved" : "pending"}>{telegramStatus?.bootstrapAdmins[0]?.status || "بانتظار تطبيق قاعدة البيانات"}</StatusPill></div><div className="bot-admin-person"><span className="record-avatar employee">م</span><p><b>د. مصطفى البياتي</b><small>@Dr_mustafa_albayati · +964 770 569 3132</small></p><em>{telegramStatus?.bootstrapAdmins[0]?.status === "تم التحقق" ? "مدير بوت فعّال" : "يرسل Start ثم يشارك رقمه من الزر"}</em></div></article>
+        <article className="panel bot-admin-card"><div className="panel-head"><div><h2>حساب Start الآخر</h2><p>لا تُمنح الصلاحية لمستخدم مجهول تلقائيًا</p></div><span className="request-count">{IQD.format(telegramStatus?.pendingAdminRequests.length || 0)}</span></div>{telegramStatus?.pendingAdminRequests.length ? telegramStatus.pendingAdminRequests.slice(0, 3).map((request) => <div className="bot-admin-person compact" key={request.id}><span>#{IQD.format(request.id)}</span><p><b>{request.displayName || "حساب Telegram"}</b><small>{request.username ? `@${request.username}` : "بلا اسم مستخدم"} · ينتظر موافقة مدير البوت</small></p></div>) : <div className="bot-admin-empty"><span>✓</span><p><b>لا يوجد طلب مستلم بعد</b><small>بعد تشغيل البوت وإرسال Start يظهر الحساب هنا، ويوافق عليه د. مصطفى من أزرار البوت.</small></p></div>}</article>
       </section>
 
       {telegramLink && <section className="panel telegram-link-card">

@@ -6,15 +6,20 @@ export async function GET(request: Request) {
     const actorName = new URL(request.url).searchParams.get("actorName")?.trim() || "";
     await authorizeEmployeeRequest(request, actorName, ["رئيس المقيمين", "الإدارة العليا", "مطور النظام"]);
     const supabase = getSupabaseAdmin();
-    const [accountsResult, updatesResult, tasksResult] = await Promise.all([
-      supabase.from("telegram_accounts").select("id,employee_id,username,status,paired_at,last_seen_at").order("paired_at", { ascending: false }),
+    const [accountsResult, updatesResult, tasksResult, adminRequestsResult, allowlistResult] = await Promise.all([
+      supabase.from("telegram_accounts").select("id,employee_id,username,status,is_bot_admin,paired_at,last_seen_at").order("paired_at", { ascending: false }),
       supabase.from("telegram_updates").select("update_id,chat_id,employee_id,command,status,error_message,received_at,processed_at").order("received_at", { ascending: false }).limit(12),
       supabase.from("operational_tasks").select("id", { count: "exact", head: true }).neq("status", "مكتملة").neq("status", "ملغاة"),
+      supabase.from("telegram_bot_admin_requests").select("id,username,display_name,status,requested_at").order("requested_at", { ascending: false }).limit(20),
+      supabase.from("telegram_bot_admin_allowlist").select("employee_id,telegram_username,status,verified_at").limit(20),
     ]);
-    const firstError = accountsResult.error || updatesResult.error || tasksResult.error;
+    const firstError = accountsResult.error || updatesResult.error || tasksResult.error || adminRequestsResult.error || allowlistResult.error;
     if (firstError) throw firstError;
 
-    const employeeIds = (accountsResult.data || []).map((row) => Number(row.employee_id));
+    const employeeIds = [...new Set([
+      ...(accountsResult.data || []).map((row) => Number(row.employee_id)),
+      ...(allowlistResult.data || []).map((row) => Number(row.employee_id)),
+    ])];
     const employeeMap = new Map<number, { name: string; role: string }>();
     if (employeeIds.length) {
       const { data, error } = await supabase.from("employees").select("id,full_name,role").in("id", employeeIds);
@@ -40,6 +45,7 @@ export async function GET(request: Request) {
         employeeRole: employeeMap.get(Number(row.employee_id))?.role || "غير محدد",
         username: row.username,
         status: row.status,
+        isBotAdmin: Boolean(row.is_bot_admin),
         pairedAt: row.paired_at,
         lastSeenAt: row.last_seen_at,
       })),
@@ -53,6 +59,23 @@ export async function GET(request: Request) {
         processedAt: row.processed_at,
       })),
       openTasks: tasksResult.count || 0,
+      botAdmins: (accountsResult.data || []).filter((row) => Boolean(row.is_bot_admin)).map((row) => ({
+        employeeName: employeeMap.get(Number(row.employee_id))?.name || "مدير بوت",
+        username: row.username,
+        lastSeenAt: row.last_seen_at,
+      })),
+      pendingAdminRequests: (adminRequestsResult.data || []).filter((row) => row.status === "بانتظار الموافقة").map((row) => ({
+        id: row.id,
+        username: row.username,
+        displayName: row.display_name,
+        requestedAt: row.requested_at,
+      })),
+      bootstrapAdmins: (allowlistResult.data || []).map((row) => ({
+        employeeName: employeeMap.get(Number(row.employee_id))?.name || "د. مصطفى البياتي",
+        username: row.telegram_username,
+        status: row.status,
+        verifiedAt: row.verified_at,
+      })),
     });
   } catch (error) {
     return authorizationFailure(error, "تعذر تحميل حالة بوت البياتي");

@@ -194,6 +194,38 @@ test("adds durable attendance, private files, and the secure Albayati Telegram w
   assert.doesNotMatch(securitySurface, /\b(?:ghp|nfp|sbp)_[A-Za-z0-9]+\b/);
 });
 
+test("adds verified Telegram administrators and complete button menus", async () => {
+  const [migration, webhook, telegramHelper, statusApi, page, webhookScript] = await Promise.all([
+    readFile(new URL("../supabase/migrations/202608110006_telegram_admins_and_button_menu.sql", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/telegram/webhook/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../lib/telegram.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/telegram/status/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../scripts/register-telegram-webhook.mjs", import.meta.url), "utf8"),
+  ]);
+
+  for (const table of ["telegram_bot_admin_allowlist", "telegram_bot_admin_requests"]) {
+    assert.match(migration, new RegExp(`create table if not exists public\\.${table}`));
+  }
+  assert.match(migration, /BOT-ADMIN-001/);
+  assert.match(migration, /dr_mustafa_albayati/);
+  assert.match(migration, /\+9647705693132/);
+  assert.match(webhook, /adminapprove/);
+  assert.match(webhook, /telegramContactVerificationKeyboard/);
+  assert.match(webhook, /is_bot_admin/);
+  assert.match(telegramHelper, /inline_keyboard/);
+  assert.match(telegramHelper, /answerCallbackQuery/);
+  assert.match(telegramHelper, /request_contact/);
+  assert.match(statusApi, /pendingAdminRequests/);
+  assert.match(page, /@Dr_mustafa_albayati/);
+  assert.match(page, /Start/);
+  assert.match(webhookScript, /callback_query/);
+
+  const securitySurface = [migration, webhook, telegramHelper, statusApi, page, webhookScript].join("\n");
+  assert.doesNotMatch(securitySurface, /\b\d{8,11}:AA[A-Za-z0-9_-]{20,}\b/);
+  assert.doesNotMatch(securitySurface, /\b(?:ghp|nfp|sbp)_[A-Za-z0-9]+\b/);
+});
+
 test("prepares Netlify without allowing an automatic release", async () => {
   const [config, gate, packageJson, setup] = await Promise.all([
     readFile(new URL("../netlify.toml", import.meta.url), "utf8"),
