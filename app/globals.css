@@ -1173,3 +1173,156 @@ main { padding-top: 42px; }
   .account-trigger > div, .account-trigger > i { display: none; }
   .account-panel { left: auto; right: 0; }
 }
+
+@media (max-width: 900px) {
+
+  /* ---- Mobile bottom bar: spring-driven, in the system palette ---- */
+  /* One easing curve does the overshoot a spring would, without a JS runtime. */
+  .mobile-nav {
+    --spring: cubic-bezier(.34, 1.56, .64, 1);
+    --tab-width: calc(100% / var(--tab-count, 4));
+    position: fixed;
+    isolation: isolate;
+    padding-inline: 0;
+    justify-content: stretch;
+  }
+
+  /* The pill travels to the active tab. RTL, so it starts from the right. */
+  .mobile-nav-pill {
+    position: absolute;
+    z-index: 0;
+    top: 6px;
+    right: 0;
+    width: var(--tab-width);
+    height: calc(100% - 12px - env(safe-area-inset-bottom));
+    padding-inline: 9px;
+    pointer-events: none;
+    transform: translateX(calc(var(--tab-index, 0) * var(--tab-width) * -1));
+    transition: transform .42s var(--spring), opacity .2s ease;
+  }
+  .mobile-nav-pill::before {
+    content: "";
+    position: absolute;
+    inset: 0 9px;
+    border-radius: 14px;
+    background: var(--teal-soft);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--teal) 22%, transparent);
+  }
+  /* A hairline above the pill marks the section, the way a tab indicator does. */
+  .mobile-nav-pill::after {
+    content: "";
+    position: absolute;
+    top: -6px;
+    right: 50%;
+    width: 26px;
+    height: 3px;
+    border-radius: 0 0 3px 3px;
+    background: var(--teal);
+    transform: translateX(50%);
+  }
+  .mobile-nav-pill.hidden { opacity: 0; }
+
+  .mobile-nav button {
+    position: relative;
+    z-index: 1;
+    max-width: none;
+    border-radius: 14px;
+    transition: color .22s ease;
+    -webkit-tap-highlight-color: transparent;
+  }
+  /* Hover belongs to pointers; on a phone it sticks after a tap. */
+  .mobile-nav button:hover { background: transparent; }
+  @media (hover: hover) {
+    .mobile-nav button:hover { color: var(--teal-dark); }
+  }
+  .mobile-nav button:active { transform: none; }
+  .mobile-nav button:active .nav-icon { transform: scale(.9); }
+
+  .mobile-nav .nav-icon {
+    display: grid;
+    place-items: center;
+    transition: transform .42s var(--spring);
+  }
+  .mobile-nav button.active .nav-icon { transform: translateY(-2px) scale(1.14); }
+
+  .mobile-nav small {
+    font-weight: 600;
+    opacity: .72;
+    transition: opacity .22s ease, font-weight .22s ease;
+  }
+  .mobile-nav button.active small { opacity: 1; font-weight: 800; }
+
+  /* Movement is decoration here: without it the bar must still read correctly. */
+
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mobile-nav-pill { transition: none; }
+  .mobile-nav .nav-icon, .mobile-nav button, .mobile-nav small { transition: none; }
+  .mobile-nav button.active .nav-icon { transform: none; }
+}
+
+/* ---- Expandable header actions: icon alone, label on demand ---- */
+.header-tabs {
+  --spring: cubic-bezier(.34, 1.4, .64, 1);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  box-shadow: 0 1px 2px rgba(10,40,32,.05);
+}
+
+.header-tab {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  padding-inline: 8px;
+  border-radius: 12px;
+  transition: gap .38s var(--spring), padding-inline .38s var(--spring), background .2s ease, color .2s ease;
+}
+.header-tab:hover, .header-tab:focus-visible, .header-tab[aria-expanded="true"] {
+  gap: 7px;
+  padding-inline: 12px;
+  background: var(--teal-soft);
+  color: var(--teal);
+}
+
+/* Animating to width:auto needs a grid track, not a guessed pixel width. */
+.tab-label {
+  display: grid;
+  grid-template-columns: 0fr;
+  opacity: 0;
+  transition: grid-template-columns .38s var(--spring), opacity .24s ease;
+}
+.tab-label > i {
+  overflow: hidden;
+  min-width: 0;
+  white-space: nowrap;
+  font-style: normal;
+  font-size: 9px;
+  font-weight: 700;
+}
+.header-tab:hover .tab-label,
+.header-tab:focus-visible .tab-label,
+.header-tab[aria-expanded="true"] .tab-label {
+  grid-template-columns: 1fr;
+  opacity: 1;
+}
+
+/* The bell already carries a status dot; keep it beside the icon, not the label. */
+.header-tabs .notification-button > i:not(.tab-label i) { flex-shrink: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  .header-tab, .tab-label { transition: none; }
+}
+
+/* On a phone the labels would eat the row, so the icons stay compact. */
+@media (max-width: 720px) {
+  .header-tab:hover, .header-tab:focus-visible { gap: 0; padding-inline: 8px; }
+  .header-tab:hover .tab-label, .header-tab:focus-visible .tab-label { grid-template-columns: 0fr; opacity: 0; }
+  .header-tab[aria-expanded="true"] { gap: 7px; padding-inline: 12px; }
+  .header-tab[aria-expanded="true"] .tab-label { grid-template-columns: 1fr; opacity: 1; }
+}

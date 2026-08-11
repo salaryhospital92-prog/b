@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState, type CSSProperties } from "react";
 import { usePathname } from "next/navigation";
 import { buildNewbornNames, getInitialPrice, isBirthEntry, MAX_NEWBORNS } from "../lib/rules-engine";
 import { getSupabaseBrowser } from "../lib/supabase-browser";
@@ -281,6 +281,9 @@ export default function Home({ initialUser }: { initialUser: SessionUser | null 
       { id: "capabilities" as View, label: "صلاحيات المطور", icon: "؟" },
     ];
   }, [role]);
+
+  // The four the thumb can reach; the pill animates between exactly these.
+  const mobileTabs = useMemo(() => navItems.slice(0, 4), [navItems]);
 
   const globalSearchResults = useMemo<GlobalSearchResult[]>(() => {
     const normalize = (value: string) => value.trim().toLocaleLowerCase("ar").replace(/[أإآ]/g, "ا").replace(/ى/g, "ي");
@@ -1533,8 +1536,8 @@ export default function Home({ initialUser }: { initialUser: SessionUser | null 
         <header className="topbar">
           <div className="mobile-brand"><button type="button" className="menu-trigger" aria-label="إظهار القائمة الجانبية" onClick={() => setSidebarExpanded(true)}>☰</button><span className="brand-mark" role="img" aria-label="شعار نظام البياتي" /><b>البياتي</b></div>
           <label className="global-search"><span aria-hidden="true">⌕</span><input aria-label="البحث في النظام" value={globalSearch} onChange={(event) => { setGlobalSearch(event.target.value); setSearchOpen(true); }} onFocus={() => setSearchOpen(true)} onBlur={() => window.setTimeout(() => setSearchOpen(false), 150)} onKeyDown={(event) => { if (event.key === "Enter" && globalSearchResults[0]) activateSearchResult(globalSearchResults[0]); if (event.key === "Escape") setSearchOpen(false); }} placeholder="ابحث بالاسم أو رقم الملف أو القسم..." />{searchOpen && globalSearch.trim().length >= 2 && <div className="global-search-results" role="listbox">{globalSearchResults.length ? globalSearchResults.map((result) => <button type="button" role="option" aria-selected="false" key={result.id} onMouseDown={(event) => event.preventDefault()} onClick={() => activateSearchResult(result)}><span>{result.kind === "account" ? "ط" : result.kind === "patient" ? "م" : "←"}</span><p><b>{result.label}</b><small>{result.meta}</small></p></button>) : <p className="search-empty"><b>لا توجد نتيجة مطابقة</b><small>جرّب الاسم الكامل أو رقم الملف.</small></p>}</div>}</label>
-          <div className="top-actions">{isDeveloper && <span className="demo-chip">معاينة المطور</span>}<button className="theme-button" aria-label="تبديل الوضع الليلي والنهاري" title="الوضع الليلي / النهاري" onClick={toggleTheme}><span className="theme-sun">☀</span><span className="theme-moon">☾</span></button><div className="notification-wrap"><button
-              className={`icon-button notification-button${notificationPermission === "granted" ? " enabled" : ""}`}
+          <div className="top-actions">{isDeveloper && <span className="demo-chip">معاينة المطور</span>}<div className="header-tabs"><button className="theme-button header-tab" aria-label="تبديل الوضع الليلي والنهاري" title="الوضع الليلي / النهاري" onClick={toggleTheme}><span className="theme-sun">☀</span><span className="theme-moon">☾</span><span className="tab-label"><i>المظهر</i></span></button><div className="notification-wrap"><button
+              className={`icon-button notification-button header-tab${notificationPermission === "granted" ? " enabled" : ""}`}
               aria-label={notificationPermission === "granted" ? "مركز الإشعارات" : "تفعيل إشعارات الجهاز"}
               title={notificationPermission === "granted" ? "مركز الإشعارات" : "اضغط لتفعيل إشعارات الجهاز"}
               aria-expanded={notificationsOpen}
@@ -1545,7 +1548,7 @@ export default function Home({ initialUser }: { initialUser: SessionUser | null 
                 if (notificationPermission === "granted") setNotificationsOpen((open) => !open);
                 else enableNotifications();
               }}
-            ><span aria-hidden="true">🔔</span><i /></button>{notificationsOpen && <section className="notifications-panel"><div><b>مركز الإشعارات</b><small>{notificationPermission === "granted" ? "إشعارات الجهاز مفعّلة" : "تحتاج تفعيل إشعارات الجهاز"}</small></div>{(role === "admin" || role === "developer") && <article className="report-notification"><span>XL</span><p><b>تقرير الإدارة – آب 2026</b><small>Excel متكامل: لوحة، تشغيل يومي، أطباء ومالية.</small></p><a href={ADMIN_REPORT_URL} download="تقرير الإدارة العليا - آب 2026.xlsx">تنزيل</a></article>}<article><span>⇄</span><p><b>تسليم المناوبة</b><small>قائمة المرضى المستلمين جاهزة للمتابعة.</small></p></article><article><span>✓</span><p><b>آخر مزامنة مكتملة</b><small>تم حفظ تغييرات {currentRole.name} مع سجل المنفذ.</small></p></article>{notificationPermission !== "granted" && <button onClick={enableNotifications} disabled={notificationPermission === "unsupported"}>تفعيل إشعارات الجهاز</button>}</section>}</div><span className="divider" /><div className="role-picker">
+            ><span aria-hidden="true">🔔</span><i /><span className="tab-label"><i>{notificationPermission === "granted" ? "الإشعارات" : "تفعيل التنبيهات"}</i></span></button>{notificationsOpen && <section className="notifications-panel"><div><b>مركز الإشعارات</b><small>{notificationPermission === "granted" ? "إشعارات الجهاز مفعّلة" : "تحتاج تفعيل إشعارات الجهاز"}</small></div>{(role === "admin" || role === "developer") && <article className="report-notification"><span>XL</span><p><b>تقرير الإدارة – آب 2026</b><small>Excel متكامل: لوحة، تشغيل يومي، أطباء ومالية.</small></p><a href={ADMIN_REPORT_URL} download="تقرير الإدارة العليا - آب 2026.xlsx">تنزيل</a></article>}<article><span>⇄</span><p><b>تسليم المناوبة</b><small>قائمة المرضى المستلمين جاهزة للمتابعة.</small></p></article><article><span>✓</span><p><b>آخر مزامنة مكتملة</b><small>تم حفظ تغييرات {currentRole.name} مع سجل المنفذ.</small></p></article>{notificationPermission !== "granted" && <button onClick={enableNotifications} disabled={notificationPermission === "unsupported"}>تفعيل إشعارات الجهاز</button>}</section>}</div></div><span className="divider" /><div className="role-picker">
               {isDeveloper && <select aria-label="معاينة حساب آخر" value={activeAccountId} onChange={(event) => changeAccount(event.target.value)}>{demoAccounts.map((item) => <option key={item.id} value={item.id}>{item.name} — {item.label}</option>)}</select>}
               <AccountMenu
                 name={currentRole.name}
@@ -1557,7 +1560,29 @@ export default function Home({ initialUser }: { initialUser: SessionUser | null 
             </div></div>
         </header>
         <main>{renderContent()}</main>
-        <nav className="mobile-nav" aria-label="قائمة الهاتف">{navItems.slice(0, 4).map((item) => <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => navigateTo(item.id)}><Icon>{item.icon}</Icon><small>{item.label.split(" ")[0]}</small></button>)}</nav>
+        <nav
+          className="mobile-nav"
+          aria-label="قائمة الهاتف"
+          // The pill slides to the active tab: one custom property drives the
+          // whole animation, so no layout is recalculated on every tap.
+          style={{
+            "--tab-count": mobileTabs.length,
+            "--tab-index": Math.max(0, mobileTabs.findIndex((item) => item.id === view)),
+          } as CSSProperties}
+        >
+          <span className={`mobile-nav-pill${mobileTabs.some((item) => item.id === view) ? "" : " hidden"}`} aria-hidden="true" />
+          {mobileTabs.map((item) => (
+            <button
+              key={item.id}
+              className={view === item.id ? "active" : ""}
+              aria-current={view === item.id ? "page" : undefined}
+              onClick={() => navigateTo(item.id)}
+            >
+              <Icon>{item.icon}</Icon>
+              <small>{item.label.split(" ")[0]}</small>
+            </button>
+          ))}
+        </nav>
       </div>
 
       {accessModal}
