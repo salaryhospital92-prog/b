@@ -31,8 +31,10 @@ function errorMessage(error: unknown) {
   return message;
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    // Patient and staff names are not public, so reading is gated like writing.
+    await authorizeEmployeeRequest(request, new URL(request.url).searchParams.get("actorName")?.trim() || "", PATIENT_ROLES);
     const supabase = getSupabaseAdmin();
     const [patientResult, employeeResult, readmissionResult] = await Promise.all([
       supabase.from("patients").select("*").eq("is_newborn", false).order("created_at", { ascending: false }).limit(12),
@@ -50,7 +52,7 @@ export async function GET() {
       readmissionCandidates: (readmissionResult.data || []).map((row) => camelizeRecord(row as DbRecord)),
     });
   } catch (error) {
-    return Response.json({ error: errorMessage(error) }, { status: 500 });
+    return authorizationFailure(error, errorMessage(error));
   }
 }
 

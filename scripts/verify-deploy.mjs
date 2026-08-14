@@ -59,12 +59,12 @@ check("بيانات الدخول جاهزة", async () => {
 // Every screen that loads data: if one of these stops answering, that screen
 // shows a spinner and the user reports "النظام لا يعمل".
 for (const [screen, path] of [
-  ["سجل المرضى", `/api/registry`],
+  ["سجل المرضى", `/api/registry?actorName=${actor}`],
   ["جدول المناوبات", `/api/shifts?month=2026-09&actorName=${actor}`],
   ["أيام الرقود والخدج", `/api/inpatient-days?actorName=${actor}`],
   ["الحضور والنشاط", `/api/attendance?actorName=${actor}`],
   ["سجلات المناوبات", `/api/work-logs`],
-  ["التقارير", `/api/reports?period=daily&date=2026-08-11`],
+  ["التقارير", `/api/reports?period=daily&date=2026-08-11&actorName=${actor}`],
 ]) {
   check(`شاشة «${screen}» تستلم بياناتها`, async () => {
     const { status, body } = await get(path);

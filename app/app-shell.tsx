@@ -308,7 +308,7 @@ export default function Home({ initialUser }: { initialUser: SessionUser | null 
   useEffect(() => {
     if (view !== "registry") return;
     let active = true;
-    fetch("/api/registry")
+    fetch(`/api/registry?actorName=${encodeURIComponent(currentRole.name)}`)
       .then(async (response) => {
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || "تعذر تحميل سجلات التسجيل");
@@ -323,7 +323,7 @@ export default function Home({ initialUser }: { initialUser: SessionUser | null 
       })
       .finally(() => active && setRegistryLoading(false));
     return () => { active = false; };
-  }, [view]);
+  }, [view, currentRole.name]);
 
   useEffect(() => {
     if (view !== "handover") return;
