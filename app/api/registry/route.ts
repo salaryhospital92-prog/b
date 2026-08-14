@@ -1,6 +1,11 @@
 import { getSupabaseAdmin } from "../../../lib/supabase-server";
 import { buildNewbornNames, getBillingMode, getInitialPrice, isBirthEntry, MAX_NEWBORNS, parseNewbornCount } from "../../../lib/rules-engine";
 import { recordEmployeeActivitySafely } from "../../../lib/activity";
+import { authorizationFailure, authorizeEmployeeRequest } from "../../../lib/authorization";
+
+// Registering a patient is the accounts desk's job; creating staff is the chief's.
+const PATIENT_ROLES = ["الحسابات", "رئيس المقيمين", "الإدارة العليا", "مطور النظام"];
+const STAFF_ROLES = ["رئيس المقيمين", "مطور النظام"];
 
 type DbRecord = Record<string, unknown>;
 
@@ -57,6 +62,7 @@ export async function POST(request: Request) {
     const supabase = getSupabaseAdmin();
 
     if (kind === "patient") {
+      await authorizeEmployeeRequest(request, actorName, PATIENT_ROLES);
       const fullName = clean(payload.fullName);
       const fileNumber = clean(payload.fileNumber);
       const admissionDate = clean(payload.admissionDate);
@@ -111,6 +117,7 @@ export async function POST(request: Request) {
     }
 
     if (kind === "employee") {
+      await authorizeEmployeeRequest(request, actorName, STAFF_ROLES);
       const fullName = clean(payload.fullName);
       const employeeNumber = clean(payload.employeeNumber);
       const username = clean(payload.username);
@@ -150,7 +157,7 @@ export async function POST(request: Request) {
 
     return Response.json({ error: "نوع السجل غير مدعوم" }, { status: 400 });
   } catch (error) {
-    return Response.json({ error: errorMessage(error) }, { status: 500 });
+    return authorizationFailure(error, errorMessage(error));
   }
 }
 
@@ -159,6 +166,7 @@ export async function PATCH(request: Request) {
     const payload = (await request.json()) as Record<string, unknown>;
     const action = clean(payload.action);
     const actorName = clean(payload.actorName);
+    await authorizeEmployeeRequest(request, actorName, PATIENT_ROLES);
     const patientId = Number(payload.patientId);
 
     if (!Number.isInteger(patientId) || patientId <= 0) {
@@ -216,6 +224,6 @@ export async function PATCH(request: Request) {
     });
     return Response.json({ patient: camelizeRecord(result.patient), message: result.message });
   } catch (error) {
-    return Response.json({ error: errorMessage(error) }, { status: 500 });
+    return authorizationFailure(error, errorMessage(error));
   }
 }

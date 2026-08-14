@@ -1,4 +1,8 @@
 import { getSupabaseAdmin } from "../../../lib/supabase-server";
+import { authorizationFailure, authorizeEmployeeRequest } from "../../../lib/authorization";
+
+// Hospital-wide finances: management and the chief resident only.
+const REPORT_ROLES = ["الإدارة العليا", "رئيس المقيمين", "مطور النظام"];
 
 type Period = "daily" | "weekly" | "monthly";
 type NumberLike = number | string | null;
@@ -52,6 +56,7 @@ function safePeriod(value: string | null): Period {
 export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
+    await authorizeEmployeeRequest(request, url.searchParams.get("actorName")?.trim() || "", REPORT_ROLES);
     const period = safePeriod(url.searchParams.get("period"));
     const selectedDate = url.searchParams.get("date") || new Date().toISOString().slice(0, 10);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(selectedDate)) {
@@ -165,6 +170,6 @@ export async function GET(request: Request) {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "تعذر إنشاء التقرير";
-    return Response.json({ error: message.includes("runtime variables") ? "الاتصال بقاعدة البيانات قيد التجهيز" : message }, { status: 500 });
+    return authorizationFailure(error, message.includes("runtime variables") ? "الاتصال بقاعدة البيانات قيد التجهيز" : message);
   }
 }

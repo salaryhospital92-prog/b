@@ -132,6 +132,7 @@ const VIEW_PATHS: Record<View, string> = {
   accessRequests: "/access-requests",
   capabilities: "/capabilities",
 };
+const VIEW_ORDER = Object.keys(VIEW_PATHS) as View[];
 const PATH_VIEWS: Record<string, View> = Object.fromEntries(
   Object.entries(VIEW_PATHS).map(([view, path]) => [path, view as View]),
 ) as Record<string, View>;
@@ -238,7 +239,6 @@ export default function Home({ initialUser }: { initialUser: SessionUser | null 
       { id: "objections" as View, label: "اعتراضاتي", icon: "!" },
       { id: "inpatientDays" as View, label: "أيام الرقود", icon: "▣" },
       { id: "reports" as View, label: "كشف الحساب", icon: "▥" },
-      { id: "capabilities" as View, label: "دليل مهامي", icon: "؟" },
     ];
     if (role === "chief") return [
       { id: "overview" as View, label: "الرئيسية", icon: "⌂" },
@@ -328,7 +328,7 @@ export default function Home({ initialUser }: { initialUser: SessionUser | null 
   useEffect(() => {
     if (view !== "handover") return;
     let active = true;
-    fetch("/api/handover")
+    fetch(`/api/handover?actorName=${encodeURIComponent(currentRole.name)}`)
       .then(async (response) => {
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || "تعذر تحميل تسليم المناوبة");
@@ -341,7 +341,7 @@ export default function Home({ initialUser }: { initialUser: SessionUser | null 
       .catch(() => active && notify("تعذر تحميل المناوبة الآن، حاول مرة أخرى", "info"))
       .finally(() => active && setHandoverLoading(false));
     return () => { active = false; };
-  }, [view]);
+  }, [view, currentRole.name]);
 
   useEffect(() => {
     const savedTheme = window.localStorage.getItem("albayati-theme");
@@ -389,7 +389,7 @@ export default function Home({ initialUser }: { initialUser: SessionUser | null 
   useEffect(() => {
     if (view !== "reports") return;
     let active = true;
-    fetch(`/api/reports?period=${reportPeriod}&date=${reportDate}`)
+    fetch(`/api/reports?period=${reportPeriod}&date=${reportDate}&actorName=${encodeURIComponent(currentRole.name)}`)
       .then(async (response) => {
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || "تعذر تحميل التقرير");
@@ -398,7 +398,7 @@ export default function Home({ initialUser }: { initialUser: SessionUser | null 
       .catch((error) => active && notify(error instanceof Error ? error.message : "تعذر تحميل التقرير", "info"))
       .finally(() => active && setReportLoading(false));
     return () => { active = false; };
-  }, [view, reportPeriod, reportDate]);
+  }, [view, reportPeriod, reportDate, currentRole.name]);
 
   useEffect(() => {
     if (view !== "accessRequests" || role !== "chief") return;
@@ -508,12 +508,12 @@ export default function Home({ initialUser }: { initialUser: SessionUser | null 
     return () => window.removeEventListener("popstate", onPopState);
   }, []);
 
-  async function signIn(username: string, password: string): Promise<string | null> {
+  async function signIn(username: string, password: string, remember = true): Promise<string | null> {
     try {
       const response = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ username, password, remember }),
       });
       const payload = await response.json();
       if (!response.ok) return payload.error || "تعذر تسجيل الدخول";
@@ -911,11 +911,11 @@ export default function Home({ initialUser }: { initialUser: SessionUser | null 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "create",
+          actorName: currentRole.name,
           fromDoctor: handoverFromDoctor,
           toDoctor: handoverToDoctor,
           patientIds: selectedPatientIds,
           notes: formData.get("notes"),
-          actorName: currentRole.name,
         }),
       });
       const data = await response.json();
@@ -1507,7 +1507,27 @@ export default function Home({ initialUser }: { initialUser: SessionUser | null 
     return <ResidentWorkflow role={role} accountName={currentRole.name} />;
   }
 
+  /**
+   * The sidebar was the only thing keeping a role out of a screen, so typing a
+   * path reached anything. Navigation and access now read the same list.
+   */
+  const allowedViews = useMemo(() => {
+    const ids = new Set<View>(navItems.map((item) => item.id));
+    ids.add("overview");
+    // Reachable from inside other screens rather than from the sidebar.
+    if (role === "doctor") { ids.add("days"); ids.add("objections"); }
+    if (role === "chief") { ids.add("days"); ids.add("registry"); ids.add("payments"); }
+    if (role === "developer") for (const item of VIEW_ORDER) ids.add(item);
+    return ids;
+  }, [navItems, role]);
+
   function renderContent() {
+    if (!allowedViews.has(view)) {
+      return <section className="panel"><header className="panel-head"><div>
+        <h2>لا تملك صلاحية هذه الشاشة</h2>
+        <p>حسابك بصفة {currentRole.label} لا يصل إلى هذا القسم. اختر من القائمة الجانبية.</p>
+      </div></header></section>;
+    }
     if (view === "audit") return renderAudit();
     if (view === "payments") return renderPayments();
     if (view === "registry") return renderRegistry();

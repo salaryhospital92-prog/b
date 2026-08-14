@@ -1,4 +1,8 @@
 import { getSupabaseAdmin } from "../../../lib/supabase-server";
+import { authorizationFailure, authorizeEmployeeRequest } from "../../../lib/authorization";
+
+// A handover moves responsibility for real patients, so only clinical staff act.
+const HANDOVER_ROLES = ["طبيب مقيم", "رئيس المقيمين", "الإدارة العليا", "مطور النظام"];
 import { recordEmployeeActivitySafely } from "../../../lib/activity";
 
 type DbRecord = Record<string, unknown>;
@@ -66,11 +70,13 @@ async function loadHandoverData() {
   };
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const actorName = new URL(request.url).searchParams.get("actorName")?.trim() || "";
+    await authorizeEmployeeRequest(request, actorName, HANDOVER_ROLES);
     return Response.json(await loadHandoverData());
   } catch (error) {
-    return Response.json({ error: errorMessage(error) }, { status: 500 });
+    return authorizationFailure(error, errorMessage(error));
   }
 }
 
@@ -78,6 +84,7 @@ export async function POST(request: Request) {
   try {
     const payload = (await request.json()) as Record<string, unknown>;
     const action = clean(payload.action);
+    await authorizeEmployeeRequest(request, clean(payload.actorName) || clean(payload.fromDoctor), HANDOVER_ROLES);
     const supabase = getSupabaseAdmin();
 
     if (action === "create") {
@@ -122,6 +129,6 @@ export async function POST(request: Request) {
 
     return Response.json({ error: "الإجراء المطلوب غير مدعوم" }, { status: 400 });
   } catch (error) {
-    return Response.json({ error: errorMessage(error) }, { status: 500 });
+    return authorizationFailure(error, errorMessage(error));
   }
 }

@@ -5,6 +5,25 @@ export const PROCEDURE_PRICES = {
   "استشارية": 10000,
 } as const;
 
+/**
+ * What a single call pays the resident, per case. These are the same figures the
+ * database applies in save_resident_work_log; the form previews them so a doctor
+ * sees the number before submitting rather than after the audit.
+ */
+export const CALL_PRICES = {
+  consultation: 10000,
+  birth: 80000,
+} as const;
+
+/**
+ * The call's own total, before the doctor's caps are applied. Special cases are
+ * recorded for review but carry no fee, and inpatient days are billed
+ * separately once payment is confirmed — neither belongs in this figure.
+ */
+export function calculateCallTotal(input: { consultations: number; births: number }) {
+  return input.consultations * CALL_PRICES.consultation + input.births * CALL_PRICES.birth;
+}
+
 /** What one inpatient day pays the attending doctor once the family settles it. */
 export const INPATIENT_DAY_FEE = 25000;
 

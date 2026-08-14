@@ -7,7 +7,7 @@ import { useEffect, useState } from "react";
 type LoginLandingProps = {
   isInstalled: boolean;
   notificationPermission: NotificationPermission | "unsupported";
-  onLogin: (username: string, password: string) => Promise<string | null>;
+  onLogin: (username: string, password: string, remember: boolean) => Promise<string | null>;
   onEmailLink: (email: string) => Promise<string | null>;
   onRequestAccount: () => void;
   onInstall: (platform: "ios" | "android") => void;
@@ -27,6 +27,7 @@ export default function LoginLanding({ isInstalled, notificationPermission, onLo
   const [email, setEmail] = useState("");
   const [notice, setNotice] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [remember, setRemember] = useState(true);
   const [featureIndex, setFeatureIndex] = useState(0);
   const [visibleCharacters, setVisibleCharacters] = useState(0);
   const [phase, setPhase] = useState<"typing" | "showing" | "deleting">("typing");
@@ -96,7 +97,7 @@ export default function LoginLanding({ isInstalled, notificationPermission, onLo
           setNotice("");
           // The server decides; the browser never holds a password to compare against.
           const failure = mode === "password"
-            ? await onLogin(username, password)
+            ? await onLogin(username, password, remember)
             : await onEmailLink(email);
           setSigningIn(false);
           if (failure) { setLoginError(failure); if (mode === "password") setPassword(""); }
@@ -116,7 +117,13 @@ export default function LoginLanding({ isInstalled, notificationPermission, onLo
                   <button type="button" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"}>{showPassword ? "إخفاء" : "إظهار"}</button>
                 </div>
               </label>
-              <button className="login-forgot" type="button" onClick={() => { setMode("reset"); setNotice(""); setLoginError(""); }}>نسيت كلمة المرور؟</button>
+              <div className="login-options">
+                <label className="login-remember">
+                  <input type="checkbox" checked={remember} onChange={(event) => setRemember(event.target.checked)} />
+                  <span>أبقني مسجّلاً</span>
+                </label>
+                <button className="login-forgot" type="button" onClick={() => { setMode("reset"); setNotice(""); setLoginError(""); }}>نسيت كلمة المرور؟</button>
+              </div>
             </div>
           ) : (
             <div className="login-credentials">

@@ -4,7 +4,23 @@ type Row = Record<string, unknown>;
 
 const BUCKET = "consultation-evidence";
 const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"]);
-const MAX_FILE_SIZE = 5 * 1024 * 1024;
+const ALLOWED_EXTENSIONS = new Set(["jpg", "jpeg", "png", "webp", "heic", "heif"]);
+// Phone photos routinely pass 5MB, and the old ceiling rejected them outright.
+const MAX_FILE_SIZE = 10 * 1024 * 1024;
+
+/**
+ * Some phone pickers hand over an empty or generic MIME type — iOS does it for
+ * HEIC constantly — so the extension is the fallback rather than a rejection.
+ */
+function imageKind(file: File) {
+  if (ALLOWED_TYPES.has(file.type)) return file.type;
+  const extension = file.name.split(".").pop()?.toLowerCase() || "";
+  if (!ALLOWED_EXTENSIONS.has(extension)) return null;
+  if (extension === "png") return "image/png";
+  if (extension === "webp") return "image/webp";
+  if (extension === "heic" || extension === "heif") return `image/${extension}`;
+  return "image/jpeg";
+}
 
 function demoEnabled() {
   return readRuntimeVariable("DEMO_MODE") === "true";
@@ -151,7 +167,11 @@ export async function POST(request: Request) {
     const specialCases = integer(form.get("specialCases"));
     const specialNote = clean(form.get("specialNote"));
     const labels = form.getAll("consultationLabel").map(clean);
-    const files = form.getAll("consultationEvidence").filter((item): item is File => item instanceof File && item.size > 0);
+    // Slots keep their position, so replacing one photo out of three is possible
+    // instead of forcing every image to be re-picked.
+    const evidenceSlots = form.getAll("consultationEvidence")
+      .map((item) => (item instanceof File && item.size > 0 ? item : null));
+    const files = evidenceSlots.filter((item): item is File => item !== null);
 
     if (!doctorName || !editorName || !/^\d{4}-\d{2}-\d{2}$/.test(callDate) || ![12, 24].includes(callHours)) {
       return Response.json({ error: "بيانات الطبيب أو تاريخ وساعات الكول غير مكتملة" }, { status: 400 });
@@ -159,12 +179,12 @@ export async function POST(request: Request) {
     if ([inpatients, consultations, births, cesareans, specialCases].some((value) => value < 0)) {
       return Response.json({ error: "يرجى إدخال أعداد صحيحة للحالات" }, { status: 400 });
     }
-    if (files.length !== 0 && files.length !== consultations) {
-      return Response.json({ error: `عند استبدال الإثباتات يلزم اختيار ${consultations} صورة؛ صورة لكل استشارية` }, { status: 400 });
-    }
     for (const file of files) {
-      if (!ALLOWED_TYPES.has(file.type) || file.size > MAX_FILE_SIZE) {
-        return Response.json({ error: "صور الإثبات يجب أن تكون JPG أو PNG أو WEBP وبحجم لا يتجاوز 5MB" }, { status: 400 });
+      if (!imageKind(file)) {
+        return Response.json({ error: "صور الإثبات يجب أن تكون JPG أو PNG أو WEBP أو HEIC" }, { status: 400 });
+      }
+      if (file.size > MAX_FILE_SIZE) {
+        return Response.json({ error: `حجم «${file.name}» يتجاوز 10MB. صغّر الصورة وأعد المحاولة.` }, { status: 400 });
       }
     }
 
@@ -185,21 +205,38 @@ export async function POST(request: Request) {
       oldEvidence = (data || []).map((row) => ({ evidence_path: String(row.evidence_path), case_label: row.case_label }));
     }
 
-    const keepsExistingEvidence = files.length === 0 && Boolean(oldCall) && oldEvidence.length === consultations;
-    if (consultations > 0 && files.length === 0 && !keepsExistingEvidence) {
-      return Response.json({ error: `يلزم إرفاق ${consultations} صورة؛ صورة واحدة لكل استشارية` }, { status: 400 });
+    // Each case keeps whichever photo it already had unless a new one was picked
+    // for that exact slot, so a single replacement no longer forces the rest.
+    const missing: number[] = [];
+    for (let index = 0; index < consultations; index += 1) {
+      if (!evidenceSlots[index] && !oldEvidence[index]) missing.push(index + 1);
+    }
+    if (missing.length) {
+      return Response.json({
+        error: missing.length === consultations
+          ? `يلزم إرفاق ${consultations} صورة؛ صورة واحدة لكل استشارية`
+          : `ينقص إثبات الحالة رقم ${missing.join("، ")}`,
+      }, { status: 400 });
     }
 
     const folder = `${doctor.id}/${callDate}`;
-    for (const file of files) {
+    const freshPaths = new Map<number, string>();
+    for (let index = 0; index < consultations; index += 1) {
+      const file = evidenceSlots[index];
+      if (!file) continue;
       const path = `${folder}/${safeFileName(file.name)}`;
-      const { error } = await supabase.storage.from(BUCKET).upload(path, file, { contentType: file.type, upsert: false });
+      const { error } = await supabase.storage.from(BUCKET)
+        .upload(path, file, { contentType: imageKind(file) || "image/jpeg", upsert: false });
       if (error) throw error;
       uploadedPaths.push(path);
+      freshPaths.set(index, path);
     }
-    const evidence = keepsExistingEvidence
-      ? oldEvidence.map((item, index) => ({ caseNumber: index + 1, caseLabel: labels[index] || item.case_label || `الحالة الاستشارية ${index + 1}`, path: item.evidence_path }))
-      : uploadedPaths.map((path, index) => ({ caseNumber: index + 1, caseLabel: labels[index] || `الحالة الاستشارية ${index + 1}`, path }));
+
+    const evidence = Array.from({ length: consultations }, (_, index) => ({
+      caseNumber: index + 1,
+      caseLabel: labels[index] || oldEvidence[index]?.case_label || `الحالة الاستشارية ${index + 1}`,
+      path: freshPaths.get(index) ?? oldEvidence[index].evidence_path,
+    }));
     const { data, error } = await supabase.rpc("save_resident_work_log", {
       p_doctor_name: doctorName,
       p_editor_name: editorName,

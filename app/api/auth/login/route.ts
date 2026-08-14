@@ -5,6 +5,7 @@ import {
   newSessionToken,
   readSessionCookie,
   sessionCookie,
+  sessionDays,
   toUser,
 } from "../../../../lib/session";
 
@@ -34,12 +35,14 @@ export async function POST(request: Request) {
       return Response.json({ error: "أدخل اسم المستخدم وكلمة المرور" }, { status: 400 });
     }
 
+    const remember = payload.remember !== false;
     const token = newSessionToken();
     const { data, error } = await getSupabaseAdmin().rpc("open_session", {
       p_login_name: username,
       p_password: password,
       p_token_hash: await hashToken(token),
       p_user_agent: (request.headers.get("user-agent") || "").slice(0, 200),
+      p_days: sessionDays(remember),
     });
     if (error) throw error;
 
@@ -54,7 +57,7 @@ export async function POST(request: Request) {
 
     return Response.json(
       { user: toUser({ ...result.employee, must_change_password: result.must_change_password }) },
-      { headers: { "Set-Cookie": sessionCookie(token, request), "Cache-Control": "no-store" } },
+      { headers: { "Set-Cookie": sessionCookie(token, request, remember), "Cache-Control": "no-store" } },
     );
   } catch {
     return Response.json({ error: "تعذر تسجيل الدخول" }, { status: 500 });

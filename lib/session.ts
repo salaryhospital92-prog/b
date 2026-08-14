@@ -2,6 +2,12 @@ import { getSupabaseAdmin } from "./supabase-server";
 
 export const SESSION_COOKIE = "albayati_session";
 const SESSION_DAYS = 30;
+/** A shared ward computer should forget the doctor when the browser closes. */
+const SHORT_SESSION_DAYS = 1;
+
+export function sessionDays(remember: boolean) {
+  return remember ? SESSION_DAYS : SHORT_SESSION_DAYS;
+}
 
 export type SessionUser = {
   id: number;
@@ -30,10 +36,12 @@ export function readSessionCookie(request: Request) {
   return match ? decodeURIComponent(match.slice(SESSION_COOKIE.length + 1)) : "";
 }
 
-export function sessionCookie(token: string, request: Request) {
+export function sessionCookie(token: string, request: Request, remember = true) {
   const secure = new URL(request.url).protocol === "https:" ? "; Secure" : "";
-  const maxAge = token ? SESSION_DAYS * 24 * 60 * 60 : 0;
-  return `${SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax${secure}; Max-Age=${maxAge}`;
+  // Without "remember me" the cookie has no Max-Age, so it dies with the browser.
+  if (!token) return `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax${secure}; Max-Age=0`;
+  const lifetime = remember ? `; Max-Age=${SESSION_DAYS * 24 * 60 * 60}` : "";
+  return `${SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax${secure}${lifetime}`;
 }
 
 function toUser(row: Record<string, unknown>): SessionUser {
