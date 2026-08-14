@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState, type CSSProperties } from "react";
 import { usePathname } from "next/navigation";
-import { buildNewbornNames, getInitialPrice, isBirthEntry, MAX_NEWBORNS } from "../lib/rules-engine";
+import { buildNewbornNames, DEPARTMENTS, ENTRY_TYPES, getInitialPrice, isBirthEntry, MAX_NEWBORNS, PROCEDURE_PRICES, roomKindFor, SIDE_ROOM_ENTRY, WARDS } from "../lib/rules-engine";
 import { getSupabaseBrowser } from "../lib/supabase-browser";
 import LoginLanding from "./login-landing";
 import ResidentWorkflow from "./resident-workflow";
@@ -185,9 +185,12 @@ export default function Home({ initialUser }: { initialUser: SessionUser | null 
   const [registeredEmployees, setRegisteredEmployees] = useState<EmployeeRecord[]>([]);
   const [employeeRole, setEmployeeRole] = useState("طبيب مقيم");
   const [patientName, setPatientName] = useState("");
-  const [patientEntryType, setPatientEntryType] = useState("استشارية");
+  const [patientEntryType, setPatientEntryType] = useState<string>(ENTRY_TYPES[0]);
+  const [registryDoctors, setRegistryDoctors] = useState<{ id: number; full_name: string }[]>([]);
+  const [lastRegistered, setLastRegistered] = useState<{ record: PatientRecord; newbornNames: string[] } | null>(null);
+  const [ward, setWard] = useState<string>(WARDS[0]);
   const [newbornCount, setNewbornCount] = useState(0);
-  const [patientInitialPrice, setPatientInitialPrice] = useState<number>(getInitialPrice("استشارية"));
+  const [patientInitialPrice, setPatientInitialPrice] = useState<number>(getInitialPrice(ENTRY_TYPES[0]));
   const [handoverLoading, setHandoverLoading] = useState(true);
   const [handoverSaving, setHandoverSaving] = useState(false);
   const [handover, setHandover] = useState<HandoverRecord | null>(null);
@@ -233,7 +236,6 @@ export default function Home({ initialUser }: { initialUser: SessionUser | null 
     if (role === "doctor") return [
       { id: "overview" as View, label: "الرئيسية", icon: "⌂" },
       { id: "handover" as View, label: "استلام المناوبة", icon: "⇄" },
-      { id: "registry" as View, label: "تسجيل مريض", icon: "✚" },
       { id: "shifts" as View, label: "جدول المناوبات", icon: "◷" },
       { id: "workLogs" as View, label: "سجل المناوبات", icon: "▤" },
       { id: "objections" as View, label: "اعتراضاتي", icon: "!" },
@@ -316,6 +318,7 @@ export default function Home({ initialUser }: { initialUser: SessionUser | null 
           setRegisteredPatients(data.patients ?? []);
           setRegisteredEmployees(data.employees ?? []);
           setReadmissionCandidates(data.readmissionCandidates ?? []);
+          setRegistryDoctors(data.doctors ?? []);
         }
       })
       .catch(() => {
@@ -823,7 +826,10 @@ export default function Home({ initialUser }: { initialUser: SessionUser | null 
       if (!response.ok) throw new Error(data.error || "تعذر حفظ السجل");
       if (kind === "patient") {
         setRegisteredPatients((rows) => [data.record, ...rows]);
-        notify(`تم إنشاء ملف المريض ${data.record.fullName} بنجاح`);
+        // The file numbers the system just minted are what the ward will write
+        // on the incubator, so they are shown rather than only announced.
+        setLastRegistered({ record: data.record, newbornNames: data.newbornNames || [] });
+        notify(`تم إنشاء ملف ${data.record.fullName} بنجاح`);
       } else {
         setRegisteredEmployees((rows) => [data.record, ...rows]);
         notify(`تم تسجيل الموظف ${data.record.fullName} وتحديد صلاحياته`);
@@ -832,9 +838,10 @@ export default function Home({ initialUser }: { initialUser: SessionUser | null 
       setEmployeeRole("طبيب مقيم");
       if (kind === "patient") {
         setPatientName("");
-        setPatientEntryType("استشارية");
+        setPatientEntryType(ENTRY_TYPES[0]);
         setNewbornCount(0);
-        setPatientInitialPrice(getInitialPrice("استشارية"));
+        setPatientInitialPrice(getInitialPrice(ENTRY_TYPES[0]));
+        setWard(WARDS[0]);
       }
     } catch (error) {
       notify(error instanceof Error ? error.message : "تعذر حفظ السجل", "info");
@@ -1192,6 +1199,19 @@ export default function Home({ initialUser }: { initialUser: SessionUser | null 
           <div className="registry-main">
             {activeTab === "patient" ? (
               <>
+              {lastRegistered && <div className="registered-card">
+                <div className="registered-head"><span>✓</span><div><b>تم إنشاء الملف</b><small>{lastRegistered.record.fullName}</small></div><button type="button" onClick={() => setLastRegistered(null)}>إغلاق</button></div>
+                <dl>
+                  <div><dt>رقم الملف</dt><dd dir="ltr">{lastRegistered.record.fileNumber}</dd></div>
+                  <div><dt>نوع الدخول</dt><dd>{lastRegistered.record.entryType}</dd></div>
+                  <div><dt>القسم</dt><dd>{lastRegistered.record.department}</dd></div>
+                </dl>
+                {lastRegistered.newbornNames.length > 0 && <div className="registered-newborns">
+                  <b>المواليد المسجّلون ({IQD.format(lastRegistered.newbornNames.length)})</b>
+                  <ul>{lastRegistered.newbornNames.map((name, index) => <li key={name}><i>{index + 1}</i><span>{name}</span><em dir="ltr">{lastRegistered.record.fileNumber}-N{index + 1}</em></li>)}</ul>
+                  <small>لكل مولود ملف مستقل مرتبط بملف الأم.</small>
+                </div>}
+              </div>}
               <form className="registry-form" onSubmit={(event) => submitRegistry(event, "patient")}>
                 <div className="registry-form-head"><div><span>♙</span><p><b>بيانات المريض</b><small>الحقول المعلّمة مطلوبة لإنشاء الملف</small></p></div><StatusPill tone="approved">نموذج جديد</StatusPill></div>
                 <div className="form-section-title"><span>1</span><div><b>المعلومات الأساسية</b><small>الهوية ووسائل التواصل</small></div></div>
@@ -1207,13 +1227,13 @@ export default function Home({ initialUser }: { initialUser: SessionUser | null 
                 <div className="form-section-title"><span>2</span><div><b>بيانات الدخول</b><small>القسم والطبيب وتصنيف الدفع</small></div></div>
                 <div className="registry-fields">
                   <label className="form-field"><span>تاريخ الدخول <b>*</b></span><input name="admissionDate" type="date" required defaultValue="2026-08-11" /></label>
-                  <label className="form-field"><span>نوع الدخول <b>*</b></span><select name="entryType" required value={patientEntryType} onChange={(event) => { setPatientEntryType(event.target.value); setPatientInitialPrice(getInitialPrice(event.target.value)); if (!isBirthEntry(event.target.value)) setNewbornCount(0); }}><option>استشارية</option><option>رقود</option><option>ولادة طبيعية</option><option>عملية قيصرية</option></select></label>
-                  <label className="form-field"><span>{patientEntryType === "رقود" ? "تسعيرة يوم الرقود" : "التسعيرة الأولية"} (د.ع)</span><input name="initialPrice" type="number" min="0" step="1000" value={patientInitialPrice} onChange={(event) => setPatientInitialPrice(Number(event.target.value))} /></label>
-                  <label className="form-field"><span>القسم الطبي <b>*</b></span><select name="department" required defaultValue=""><option value="" disabled>اختر القسم</option><option>النسائية والتوليد</option><option>الجراحة العامة</option><option>الطب الباطني</option><option>طب الأطفال</option><option>الطوارئ</option><option>العناية المركزة</option></select></label>
-                  <label className="form-field"><span>الطبيب المسؤول</span><select name="attendingDoctor" defaultValue=""><option value="">يُحدد لاحقًا</option><option>د. شهد</option><option>د. تبارك</option><option>د. فنار</option></select></label>
+                  <label className="form-field"><span>نوع الدخول <b>*</b></span><select name="entryType" required value={patientEntryType} onChange={(event) => { setPatientEntryType(event.target.value); setPatientInitialPrice(getInitialPrice(event.target.value)); }}>{ENTRY_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}</select></label>
+                  <label className="form-field"><span>سعر اليوم الواحد (د.ع)</span><input name="initialPrice" type="number" min="0" step="5000" value={patientInitialPrice} onChange={(event) => setPatientInitialPrice(Math.max(0, Number(event.target.value) || 0))} /><small>{PROCEDURE_PRICES[patientEntryType as keyof typeof PROCEDURE_PRICES] ? `السعر المعتمد لهذا النوع ${IQD.format(PROCEDURE_PRICES[patientEntryType as keyof typeof PROCEDURE_PRICES])} د.ع` : "حدّد السعر يدويًا"} · يُضاف لكل يوم رقود</small></label>
+                  <label className="form-field"><span>القسم الطبي <b>*</b></span><select name="department" required defaultValue={DEPARTMENTS[0]}>{DEPARTMENTS.map((item) => <option key={item}>{item}</option>)}</select></label>
+                  <label className="form-field"><span>الطبيب المسؤول</span><select name="attendingDoctor" defaultValue="">{[<option key="none" value="">يُحدد لاحقًا</option>, ...registryDoctors.map((doctor) => <option key={doctor.id} value={doctor.full_name}>{doctor.full_name}</option>)]}</select></label>
                   <label className="form-field"><span>تصنيف الدفع <b>*</b></span><select name="paymentCategory" required defaultValue="نقدي"><option>نقدي</option><option>مجاني</option><option>تأمين</option><option>آجل</option></select></label>
                   {isBirthCase && <label className="form-field"><span>عدد المواليد</span><div className="newborn-count-field"><select value={newbornCount <= 4 ? newbornCount : "custom"} onChange={(event) => setNewbornCount(event.target.value === "custom" ? 5 : Number(event.target.value))}><option value="0">يُسجل لاحقًا</option><option value="1">مولود واحد</option><option value="2">توأم</option><option value="3">ثلاثة توائم</option><option value="4">أربعة توائم</option><option value="custom">عدد آخر (حالة نادرة)</option></select>{newbornCount > 4 && <input type="number" min="5" max={MAX_NEWBORNS} value={newbornCount} onChange={(event) => setNewbornCount(Math.min(MAX_NEWBORNS, Math.max(5, Number(event.target.value) || 5)))} aria-label="عدد المواليد" />}</div><input type="hidden" name="newbornCount" value={newbornCount} /></label>}
-                  <label className="form-field full"><span>ملاحظات أولية</span><textarea name="notes" rows={3} placeholder="الحالة عند الدخول أو أي معلومات مهمة للكادر..." /></label>
+                  <label className="form-field"><span>الردهة <b>*</b></span><select name="ward" required value={ward} onChange={(event) => setWard(event.target.value)}>{WARDS.map((item) => <option key={item}>{item}</option>)}</select></label><label className="form-field"><span>{roomKindFor(patientEntryType)} <b>*</b></span><input name="roomNumber" required placeholder={patientEntryType === SIDE_ROOM_ENTRY ? "مثال: 12" : "مثال: حاضنة 4"} /><input type="hidden" name="roomKind" value={roomKindFor(patientEntryType)} /><small>{patientEntryType === SIDE_ROOM_ENTRY ? "سايد روم يُسجَّل برقم الغرفة" : "بقية الأنواع تُسجَّل برقم الحاضنة"}</small></label><label className="form-field full"><span>ملاحظات الردهة</span><input name="wardNote" placeholder="موقع الحاضنة أو ملاحظة تنظيمية" /></label><label className="form-field full"><span>ملاحظات أولية</span><textarea name="notes" rows={3} placeholder="الحالة عند الدخول أو أي معلومات مهمة للكادر..." /></label>
                 </div>
                 {isBirthCase && <div className="pricing-rule-note"><span>↻</span><p><b>قاعدة منع الازدواجية مفعّلة</b><small>إذا تحولت الحالة إلى رقود، يُبطل النظام تسعيرة الولادة ويحفظ سبب الإلغاء، ثم يبدأ التسعير التراكمي للرقود.</small></p></div>}
                 {newbornNames.length > 0 && <div className="newborn-preview"><div><span>♙</span><p><b>السجلات التي سيُنشئها النظام</b><small>مرتبطة تلقائيًا بملف الأم ومنفصلة طبيًا وماليًا</small></p></div><ul>{newbornNames.map((name, index) => <li key={name}><i>{index + 1}</i>{name}<StatusPill tone="approved">مولود جديد</StatusPill></li>)}</ul></div>}
@@ -1554,8 +1574,8 @@ export default function Home({ initialUser }: { initialUser: SessionUser | null 
         <div className="access-fields">
           <label className="form-field"><span>الاسم الكامل</span><input name="fullName" required placeholder="الاسم كما سيظهر في النظام" /></label>
           <label className="form-field"><span>البريد الإلكتروني</span><input name="email" type="email" required dir="ltr" placeholder="name@gmail.com" /></label>
-          <label className="form-field"><span>الدور المطلوب</span><select name="requestedRole" required defaultValue="طبيب مقيم"><option>طبيب مقيم</option><option>رئيس المقيمين</option><option>الحسابات</option><option>الإدارة العليا</option></select></label>
-          <label className="form-field"><span>الاختصاص</span><select name="specialty" required defaultValue="النسائية والتوليد"><option>النسائية والتوليد</option><option>الأطفال وحديثو الولادة</option><option>التخدير</option><option>التمريض</option><option>الحسابات</option><option>التسجيل والاستعلامات</option><option>إدارة المستشفى</option></select></label>
+          <label className="form-field"><span>الدور المطلوب</span><select name="requestedRole" required defaultValue="طبيب مقيم"><option>طبيب مقيم</option><option>التمريض</option><option>الحسابات</option></select></label>
+          <label className="form-field"><span>الاختصاص</span><select name="specialty" required defaultValue="الأطفال وحديثو الولادة"><option>الأطفال وحديثو الولادة</option><option>التمريض</option><option>الحسابات</option></select></label>
         </div>
         <div className="oauth-actions"><button name="provider" value="email" disabled={accessSaving}><span>@</span> المتابعة عبر البريد الإلكتروني</button><button name="provider" value="google" disabled={accessSaving}><span>G</span> المتابعة عبر Google</button><button name="provider" value="apple" disabled={accessSaving}><span>●</span> المتابعة عبر Apple</button></div>
         <p className="access-footnote">لن يُفعّل الحساب بعد التحقق مباشرة؛ يبقى بحالة «بانتظار الموافقة» حتى يعتمد رئيس المقيمين الطلب.</p>

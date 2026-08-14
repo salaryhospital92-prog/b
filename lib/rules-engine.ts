@@ -1,9 +1,36 @@
+/**
+ * What a neonatal admission costs per day. The type describes the support the
+ * baby is on, and the family is billed for every day that support continues —
+ * so these are daily rates, not one-off charges.
+ */
 export const PROCEDURE_PRICES = {
-  "ولادة طبيعية": 10000,
-  "عملية قيصرية": 60000,
-  "رقود": 0,
-  "استشارية": 10000,
+  "Incubator / O2": 160000,
+  "CAPA (A)": 210000,
+  "CPAP (B)": 160000,
+  "Ventilator (A)": 310000,
+  "Side room": 210000,
+  "Others": 0,
 } as const;
+
+export const ENTRY_TYPES = Object.keys(PROCEDURE_PRICES) as (keyof typeof PROCEDURE_PRICES)[];
+
+/** A side room is a room; everything else is an incubator bay. */
+export const SIDE_ROOM_ENTRY = "Side room";
+
+export function roomKindFor(entryType: string) {
+  return entryType === SIDE_ROOM_ENTRY ? "رقم الغرفة" : "رقم الحاضنة";
+}
+
+export const WARDS = ["خدج", "سايد روم", "أخرى"] as const;
+export const ROOM_KINDS = ["رقم الغرفة", "رقم الحاضنة", "أخرى"] as const;
+
+export const DEPARTMENTS = [
+  "قسم الأطفال وحديثي الولادة",
+  "العناية المركزة",
+  "الطوارئ",
+  "النسائية والتوليد",
+  "أخرى",
+] as const;
 
 /**
  * What a single call pays the resident, per case. These are the same figures the
@@ -58,7 +85,10 @@ export function summariseInpatientDays(days: { status: DayPaymentState }[]) {
 /** Upper bound on a single birth; anything higher is a data-entry slip, not a delivery. */
 export const MAX_NEWBORNS = 10;
 
-/** Birth cases are recorded on the mother's file, so the patient is always female. */
+/**
+ * Kept for the older records and the bot's own flow. The neonatal registry has
+ * no birth admission types, so this is false for everything it creates.
+ */
 export function isBirthEntry(entryType: string) {
   return entryType === "ولادة طبيعية" || entryType === "عملية قيصرية";
 }
@@ -80,13 +110,19 @@ export function buildNewbornNames(motherName: string, newbornCount: number) {
 }
 
 export function getBillingMode(entryType: string) {
-  return entryType === "رقود" ? "تراكمي" : "مقطوعي";
+  // Neonatal support is charged for every day it continues.
+  return entryType === "Others" ? "مقطوعي" : "تراكمي";
 }
 
 export function getInitialPrice(entryType: string) {
   return PROCEDURE_PRICES[entryType as keyof typeof PROCEDURE_PRICES] ?? 0;
 }
 
+/**
+ * What a doctor earns for a day's work. Doctor pay comes from CALL_PRICES, not
+ * from PROCEDURE_PRICES — the latter is what the family is billed for a bed,
+ * which is a different number for a different party.
+ */
 export function calculateDailyCompensation(input: {
   consultations: number;
   births: number;
@@ -95,9 +131,9 @@ export function calculateDailyCompensation(input: {
   maxConsultations: number;
   combinedCap: number;
 }) {
-  const consultationEntered = input.consultations * PROCEDURE_PRICES["استشارية"];
-  const consultationApproved = Math.min(input.consultations, input.maxConsultations) * PROCEDURE_PRICES["استشارية"];
-  const combinedEntered = input.births * 80000 + input.cesareans * 120000 + input.paidInpatients * INPATIENT_DAY_FEE;
+  const consultationEntered = input.consultations * CALL_PRICES.consultation;
+  const consultationApproved = Math.min(input.consultations, input.maxConsultations) * CALL_PRICES.consultation;
+  const combinedEntered = input.births * CALL_PRICES.birth + input.cesareans * 120000 + input.paidInpatients * INPATIENT_DAY_FEE;
   const combinedApproved = Math.min(combinedEntered, input.combinedCap);
   return {
     enteredTotal: consultationEntered + combinedEntered,

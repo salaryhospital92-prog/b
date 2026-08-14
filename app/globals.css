@@ -1462,3 +1462,23 @@ main { padding-top: 42px; }
 .login-remember { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 10px; cursor: pointer; }
 .login-remember input { width: 15px; height: 15px; accent-color: var(--teal); cursor: pointer; }
 .login-options .login-forgot { margin: 0; }
+
+/* Confirmation shown right after a patient file is created */
+.registered-card { display: flex; flex-direction: column; gap: 12px; padding: 15px; margin-bottom: 15px; border-radius: 15px; border: 1px solid var(--teal); background: var(--teal-soft); }
+.registered-head { display: flex; align-items: center; gap: 10px; }
+.registered-head > span { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 10px; background: var(--paper); color: var(--teal); font-size: 15px; }
+.registered-head div { display: flex; flex-direction: column; gap: 2px; }
+.registered-head b { font-size: 11px; }
+.registered-head small { color: var(--muted); font-size: 9px; }
+.registered-head button { margin-right: auto; min-height: 28px; padding: 0 11px; border-radius: 9px; border: 1px solid var(--line); background: var(--paper); color: var(--muted); font: inherit; font-size: 8px; cursor: pointer; }
+.registered-card dl { margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; }
+.registered-card dl > div { display: flex; flex-direction: column; gap: 3px; padding: 10px 13px; border-radius: 11px; background: var(--paper); }
+.registered-card dt { color: var(--muted); font-size: 8px; }
+.registered-card dd { margin: 0; font-size: 11px; font-weight: 800; }
+.registered-newborns { padding: 12px 13px; border-radius: 12px; background: var(--paper); }
+.registered-newborns > b { display: block; font-size: 10px; margin-bottom: 7px; }
+.registered-newborns ul { list-style: none; margin: 0; padding: 0; }
+.registered-newborns li { display: flex; align-items: center; gap: 9px; min-height: 30px; border-top: 1px solid var(--line); font-size: 9px; }
+.registered-newborns li i { width: 20px; height: 20px; display: grid; place-items: center; border-radius: 6px; background: var(--teal-soft); color: var(--teal); font-style: normal; font-size: 8px; font-weight: 800; }
+.registered-newborns li em { margin-right: auto; color: var(--muted); font-style: normal; font-size: 8px; }
+.registered-newborns > small { display: block; margin-top: 7px; color: var(--muted); font-size: 8px; }

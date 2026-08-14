@@ -1,5 +1,5 @@
 import { getSupabaseAdmin } from "../../../lib/supabase-server";
-import { buildNewbornNames, getBillingMode, getInitialPrice, isBirthEntry, MAX_NEWBORNS, parseNewbornCount } from "../../../lib/rules-engine";
+import { buildNewbornNames, getBillingMode, getInitialPrice, isBirthEntry, MAX_NEWBORNS, parseNewbornCount, roomKindFor } from "../../../lib/rules-engine";
 import { recordEmployeeActivitySafely } from "../../../lib/activity";
 import { authorizationFailure, authorizeEmployeeRequest } from "../../../lib/authorization";
 
@@ -36,20 +36,23 @@ export async function GET(request: Request) {
     // Patient and staff names are not public, so reading is gated like writing.
     await authorizeEmployeeRequest(request, new URL(request.url).searchParams.get("actorName")?.trim() || "", PATIENT_ROLES);
     const supabase = getSupabaseAdmin();
-    const [patientResult, employeeResult, readmissionResult] = await Promise.all([
+    const [patientResult, employeeResult, readmissionResult, doctorResult] = await Promise.all([
       supabase.from("patients").select("*").eq("is_newborn", false).order("created_at", { ascending: false }).limit(12),
       supabase.from("employees").select("*").order("created_at", { ascending: false }).limit(12),
       supabase.from("newborn_readmission_candidates").select("*").order("discharge_date", { ascending: false }).limit(60),
+      supabase.from("employees").select("id,full_name").eq("role", "طبيب مقيم").eq("status", "نشط").order("full_name"),
     ]);
 
     if (patientResult.error) throw patientResult.error;
     if (employeeResult.error) throw employeeResult.error;
     if (readmissionResult.error) throw readmissionResult.error;
+    if (doctorResult.error) throw doctorResult.error;
 
     return Response.json({
       patients: (patientResult.data || []).map((row) => camelizeRecord(row as DbRecord)),
       employees: (employeeResult.data || []).map((row) => camelizeRecord(row as DbRecord)),
       readmissionCandidates: (readmissionResult.data || []).map((row) => camelizeRecord(row as DbRecord)),
+      doctors: doctorResult.data || [],
     });
   } catch (error) {
     return authorizationFailure(error, errorMessage(error));
@@ -84,7 +87,7 @@ export async function POST(request: Request) {
       const newbornCount = requestedNewborns;
 
       const newbornNames = buildNewbornNames(fullName, newbornCount);
-      const { data, error } = await supabase.rpc("register_patient", {
+      const { data, error } = await supabase.rpc("register_neonatal_patient", {
         p_full_name: fullName,
         p_file_number: fileNumber,
         p_birth_date: clean(payload.birthDate) || null,
@@ -99,6 +102,11 @@ export async function POST(request: Request) {
         p_notes: clean(payload.notes),
         p_initial_price: initialPrice,
         p_newborn_names: newbornNames,
+        p_ward: clean(payload.ward) || null,
+        // A side room is a room; every other support type sits in an incubator.
+        p_room_kind: clean(payload.roomKind) || roomKindFor(entryType),
+        p_room_number: clean(payload.roomNumber) || null,
+        p_ward_note: clean(payload.wardNote) || null,
       });
 
       if (error) throw error;

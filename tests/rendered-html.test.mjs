@@ -50,7 +50,8 @@ test("keeps Supabase credentials server-side and covers responsive screens", asy
   ]);
 
   assert.match(api, /getSupabaseAdmin/);
-  assert.match(api, /register_patient/);
+  // The neonatal wrapper carries ward and room alongside the base registration.
+  assert.match(api, /register_neonatal_patient/);
   assert.match(handoverApi, /create_shift_handover/);
   assert.match(handoverApi, /accept_shift_handover/);
   assert.match(reportApi, /financial_transactions/);
